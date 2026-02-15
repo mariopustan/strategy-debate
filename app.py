@@ -24,6 +24,7 @@ from webauthn import (
 from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
+    AuthenticatorTransport,
     PublicKeyCredentialDescriptor,
     ResidentKeyRequirement,
     UserVerificationRequirement,
@@ -100,7 +101,11 @@ def _get_auth_options_json() -> tuple:
         allow_creds = [
             PublicKeyCredentialDescriptor(
                 id=base64url_to_bytes(c["credential_id"]),
-                transports=c.get("transports", []),
+                transports=[
+                    AuthenticatorTransport(t)
+                    for t in c.get("transports", [])
+                    if t in {e.value for e in AuthenticatorTransport}
+                ],
             )
             for c in creds
         ]
