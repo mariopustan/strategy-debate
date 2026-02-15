@@ -5,11 +5,15 @@ Streamlit-App für die Multi-KI-Dokumentenoptimierung.
 Production-ready UI/UX mit Premium Think-Tank Aesthetic.
 """
 
+import base64
 import hashlib
+import io
 import os
 import uuid
 from pathlib import Path
 
+import qrcode
+import qrcode.constants
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -40,99 +44,93 @@ def _check_auth():
     return st.session_state.get("authenticated", False)
 
 
+def _generate_qr_code(url: str) -> str:
+    """Generate a QR code as base64-encoded PNG."""
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=8,
+        border=2,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#c9952d", back_color="#111827")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
 def _show_login():
-    """Renders the login screen (smart-grc.de style split layout)."""
+    """Renders a centered login screen with QR code."""
+    # Build the app URL for the QR code
+    app_url = os.environ.get("MSC_APP_URL", "https://msc.demo-itw.de")
+    qr_b64 = _generate_qr_code(app_url)
+
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
         .stApp {
-            background: #0a0f1e !important;
+            background: linear-gradient(180deg, #080c18 0%, #0a0f1e 20%, #0d1425 100%) !important;
         }
         .stApp > header { background: transparent !important; }
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
 
-        /* Hide sidebar toggle on login */
+        /* Hide sidebar on login */
         [data-testid="stSidebarCollapsedControl"] { display: none !important; }
         section[data-testid="stSidebar"] { display: none !important; }
 
-        /* Login brand panel styles */
-        .login-brand {
-            background: linear-gradient(135deg, #0d1425 0%, #1a2744 50%, #0f1628 100%);
+        /* ── Login Card ── */
+        .login-card {
+            background: #111827;
+            border: 1px solid #1e293b;
             border-radius: 20px;
-            padding: 3rem 2rem;
-            position: relative;
-            overflow: hidden;
-            height: 100%;
-            min-height: 85vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
+            padding: 2.5rem 2.5rem 2rem 2.5rem;
+            max-width: 420px;
+            margin: 0 auto;
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4),
+                        0 0 80px rgba(201, 149, 45, 0.03);
         }
 
-        .login-brand::before {
-            content: '';
-            position: absolute;
-            top: -30%;
-            left: -30%;
-            width: 160%;
-            height: 160%;
-            background: radial-gradient(
-                ellipse at 40% 50%,
-                rgba(201, 149, 45, 0.06) 0%,
-                transparent 60%
-            );
-            animation: brand-glow 10s ease-in-out infinite alternate;
-            pointer-events: none;
-        }
-
-        @keyframes brand-glow {
-            0% { opacity: 0.4; transform: scale(1); }
-            100% { opacity: 1; transform: scale(1.15); }
-        }
-
-        .brand-content {
-            position: relative;
-            z-index: 2;
+        /* Branding */
+        .login-branding {
             text-align: center;
-            max-width: 400px;
+            margin-bottom: 1.8rem;
         }
 
-        .brand-ornament {
+        .login-ornament {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 0.6rem;
-            margin-bottom: 2rem;
+            gap: 0.5rem;
+            margin-bottom: 1.2rem;
+            opacity: 0.6;
         }
 
-        .brand-ornament .line {
-            width: 50px;
+        .login-ornament .line {
+            width: 40px;
             height: 1px;
-            background: linear-gradient(90deg, transparent, #c9952d80, transparent);
+            background: linear-gradient(90deg, transparent, #c9952d, transparent);
         }
 
-        .brand-ornament .diamond {
-            width: 8px;
-            height: 8px;
+        .login-ornament .diamond {
+            width: 6px;
+            height: 6px;
             background: #c9952d;
             transform: rotate(45deg);
-            box-shadow: 0 0 12px rgba(201, 149, 45, 0.3);
         }
 
-        .brand-title {
+        .login-title {
             font-family: 'Lora', Georgia, serif;
-            font-size: 2.4rem;
+            font-size: 1.8rem;
             font-weight: 700;
             color: #f8f9fc;
             letter-spacing: 0.02em;
             line-height: 1.2;
-            margin-bottom: 0.8rem;
         }
 
-        .brand-title .accent {
+        .login-title .accent {
             background: linear-gradient(135deg, #c9952d 0%, #dfbc5e 50%, #c9952d 100%);
             background-size: 200% auto;
             -webkit-background-clip: text;
@@ -146,96 +144,76 @@ def _show_login():
             50% { background-position: 200% center; }
         }
 
-        .brand-subtitle {
+        .login-tagline {
             font-family: 'Source Sans 3', sans-serif;
-            font-size: 1rem;
+            font-size: 0.85rem;
             color: #7b92b2;
-            line-height: 1.6;
-            margin-bottom: 2.5rem;
+            margin-top: 0.3rem;
         }
 
-        .brand-features {
-            display: flex;
-            flex-direction: column;
-            gap: 0.9rem;
-            text-align: left;
-        }
-
-        .brand-feature {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            font-family: 'Source Sans 3', sans-serif;
-            font-size: 0.88rem;
-            color: #b0c1d8;
-        }
-
-        .brand-feature-icon {
-            width: 34px;
-            height: 34px;
-            border-radius: 9px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.8rem;
-            font-weight: 700;
-            flex-shrink: 0;
-        }
-
-        .brand-feature-icon.claude {
-            background: rgba(37, 99, 235, 0.12);
-            border: 1px solid rgba(37, 99, 235, 0.25);
-            color: #93c5fd;
-        }
-        .brand-feature-icon.perplexity {
-            background: rgba(20, 184, 166, 0.12);
-            border: 1px solid rgba(20, 184, 166, 0.25);
-            color: #5eead4;
-        }
-        .brand-feature-icon.chatgpt {
-            background: rgba(34, 197, 94, 0.12);
-            border: 1px solid rgba(34, 197, 94, 0.25);
-            color: #86efac;
-        }
-
-        .brand-copyright {
-            position: absolute;
-            bottom: 1.5rem;
-            left: 0;
-            right: 0;
+        /* QR section */
+        .qr-section {
             text-align: center;
+            margin: 1.5rem 0;
+        }
+
+        .qr-wrapper {
+            display: inline-block;
+            background: #111827;
+            border: 2px solid #1e293b;
+            border-radius: 16px;
+            padding: 12px;
+            position: relative;
+            transition: border-color 0.3s ease;
+        }
+
+        .qr-wrapper:hover {
+            border-color: #c9952d40;
+        }
+
+        .qr-wrapper img {
+            display: block;
+            border-radius: 8px;
+            width: 180px;
+            height: 180px;
+        }
+
+        .qr-label {
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.78rem;
+            color: #4a6085;
+            margin-top: 0.8rem;
+            letter-spacing: 0.03em;
+        }
+
+        .qr-label strong {
+            color: #7b92b2;
+        }
+
+        /* Divider */
+        .login-divider {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            margin: 1.5rem 0;
+        }
+
+        .login-divider .line {
+            flex: 1;
+            height: 1px;
+            background: #1e293b;
+        }
+
+        .login-divider .text {
             font-family: 'Source Sans 3', sans-serif;
             font-size: 0.72rem;
-            color: #2e4066;
-            letter-spacing: 0.04em;
-            z-index: 2;
+            color: #4a6085;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            white-space: nowrap;
         }
 
-        /* Form panel styles */
-        .login-form-card {
-            padding: 2.5rem 0;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            height: 100%;
-            min-height: 85vh;
-        }
-
-        .login-form-header h2 {
-            font-family: 'Lora', Georgia, serif;
-            font-size: 1.6rem;
-            font-weight: 700;
-            color: #f8f9fc;
-            margin: 0 0 0.4rem 0;
-        }
-
-        .login-form-header p {
-            font-family: 'Source Sans 3', sans-serif;
-            font-size: 0.88rem;
-            color: #7b92b2;
-            margin: 0 0 1.8rem 0;
-        }
-
+        /* Field label */
         .login-field-label {
             font-family: 'Source Sans 3', sans-serif;
             font-size: 0.78rem;
@@ -246,103 +224,124 @@ def _show_login():
             margin-bottom: 0.4rem;
         }
 
+        /* Error */
         .login-error {
             text-align: center;
             font-family: 'Source Sans 3', sans-serif;
             color: #f87171;
-            font-size: 0.88rem;
+            font-size: 0.85rem;
             margin-top: 0.6rem;
-            padding: 0.6rem 1rem;
+            padding: 0.5rem 1rem;
             background: rgba(248, 113, 113, 0.06);
             border: 1px solid rgba(248, 113, 113, 0.15);
             border-radius: 10px;
         }
 
-        .login-footer-text {
+        /* Footer */
+        .login-footer {
             text-align: center;
-            margin-top: 2rem;
-            padding-top: 1.5rem;
+            margin-top: 1.8rem;
+            padding-top: 1.2rem;
             border-top: 1px solid #1e293b;
-            font-family: 'Source Sans 3', sans-serif;
-            font-size: 0.75rem;
-            color: #4a6085;
-            letter-spacing: 0.04em;
         }
 
-        /* Style login input */
-        .login-form-card .stTextInput input {
-            background: #111827 !important;
+        .login-footer-brand {
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.72rem;
+            color: #2e4066;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        /* Input styling */
+        .stTextInput input {
+            background: #0d1425 !important;
             border: 1px solid #243352 !important;
             border-radius: 10px !important;
             color: #f8f9fc !important;
             font-family: 'Source Sans 3', sans-serif !important;
             font-size: 0.95rem !important;
-            padding: 0.75rem 1rem !important;
+            padding: 0.7rem 1rem !important;
         }
 
-        .login-form-card .stTextInput input:focus {
+        .stTextInput input:focus {
             border-color: #c9952d !important;
             box-shadow: 0 0 0 2px rgba(201, 149, 45, 0.15) !important;
         }
 
-        .login-form-card .stTextInput input::placeholder {
+        .stTextInput input::placeholder {
             color: #4a6085 !important;
+        }
+
+        /* Button styling */
+        .stButton > button[data-testid="stBaseButton-primary"] {
+            background: linear-gradient(135deg, #c9952d 0%, #d4a843 100%) !important;
+            color: #0a0f1e !important;
+            font-family: 'Source Sans 3', sans-serif !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            letter-spacing: 0.03em;
+            border: none !important;
+            border-radius: 10px !important;
+            padding: 0.65rem 2rem !important;
+            box-shadow: 0 4px 15px rgba(201, 149, 45, 0.2) !important;
+            transition: all 0.3s ease !important;
+        }
+
+        .stButton > button[data-testid="stBaseButton-primary"]:hover {
+            background: linear-gradient(135deg, #d4a843 0%, #dfbc5e 100%) !important;
+            box-shadow: 0 6px 25px rgba(201, 149, 45, 0.35) !important;
+            transform: translateY(-1px);
         }
     </style>
     """, unsafe_allow_html=True)
 
-    # Split layout using Streamlit columns
-    brand_col, spacer, form_col = st.columns([1.3, 0.15, 0.8])
+    # Centered layout
+    _, col, _ = st.columns([1.2, 1.6, 1.2])
 
-    with brand_col:
-        st.markdown('''
-        <div class="login-brand">
-            <div class="brand-content">
-                <div class="brand-ornament">
+    with col:
+        # Vertical spacer
+        st.markdown('<div style="height: 8vh;"></div>', unsafe_allow_html=True)
+
+        # Login card (HTML part)
+        st.markdown(f'''
+        <div class="login-card">
+            <!-- Branding -->
+            <div class="login-branding">
+                <div class="login-ornament">
                     <div class="line"></div>
                     <div class="diamond"></div>
                     <div class="line"></div>
                 </div>
-                <div class="brand-title">
-                    Maure's<br><span class="accent">Strategie Club</span>
+                <div class="login-title">
+                    Maure's <span class="accent">Strategie Club</span>
                 </div>
-                <div class="brand-subtitle">
-                    Multi-KI-Strategie-Plattform:<br>
-                    Drei KI-Systeme debattieren, analysieren und
-                    optimieren Ihre Strategiedokumente.
+                <div class="login-tagline">Multi-AI Strategy Debate Platform</div>
+            </div>
+
+            <!-- QR Code -->
+            <div class="qr-section">
+                <div class="qr-wrapper">
+                    <img src="data:image/png;base64,{qr_b64}" alt="QR Code" />
                 </div>
-                <div class="brand-features">
-                    <div class="brand-feature">
-                        <div class="brand-feature-icon claude">C</div>
-                        <span><strong style="color:#93c5fd;">Claude</strong> &mdash; Kritischer Strategie-Reviewer</span>
-                    </div>
-                    <div class="brand-feature">
-                        <div class="brand-feature-icon perplexity">P</div>
-                        <span><strong style="color:#5eead4;">Perplexity</strong> &mdash; Research & Faktencheck</span>
-                    </div>
-                    <div class="brand-feature">
-                        <div class="brand-feature-icon chatgpt">G</div>
-                        <span><strong style="color:#86efac;">ChatGPT</strong> &mdash; Synthese & Rhetorik</span>
-                    </div>
+                <div class="qr-label">
+                    <strong>QR-Code scannen</strong> um die App auf dem Handy zu öffnen
                 </div>
             </div>
-            <div class="brand-copyright">
-                &copy; 2024 IT Warehouse AG &middot; Maure's Strategie Club
+
+            <!-- Divider -->
+            <div class="login-divider">
+                <div class="line"></div>
+                <div class="text">Passkey eingeben</div>
+                <div class="line"></div>
             </div>
+
+            <!-- Label -->
+            <div class="login-field-label">Passkey</div>
         </div>
         ''', unsafe_allow_html=True)
 
-    with form_col:
-        st.markdown('<div class="login-form-card">', unsafe_allow_html=True)
-
-        st.markdown('''
-        <div class="login-form-header">
-            <h2>Willkommen</h2>
-            <p>Bitte authentifizieren Sie sich mit Ihrem Passkey.</p>
-        </div>
-        <div class="login-field-label">Passkey</div>
-        ''', unsafe_allow_html=True)
-
+        # Streamlit widgets (rendered right after the card HTML)
         passkey = st.text_input(
             "Passkey",
             type="password",
@@ -362,14 +361,14 @@ def _show_login():
                     unsafe_allow_html=True,
                 )
 
+        # Footer
         st.markdown('''
-        <div class="login-footer-text">
-            Multi-AI Strategy Debate Platform<br>
-            Powered by Claude &middot; Perplexity &middot; ChatGPT
+        <div class="login-footer">
+            <div class="login-footer-brand">
+                &copy; 2024 IT Warehouse AG &middot; Powered by Claude &middot; Perplexity &middot; ChatGPT
+            </div>
         </div>
         ''', unsafe_allow_html=True)
-
-        st.markdown('</div>', unsafe_allow_html=True)
 
 
 if not _check_auth():
