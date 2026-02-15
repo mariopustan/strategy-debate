@@ -546,6 +546,8 @@ st.markdown("""
     .timeline-node.chatgpt.done { background: #14532d; }
     .timeline-node.synthesis { border-color: #d97706; background: rgba(217, 119, 6, 0.15); color: #fcd34d; }
     .timeline-node.synthesis.done { background: #451a03; }
+    .timeline-node.convergence { border-color: #a855f7; background: rgba(168, 85, 247, 0.15); color: #c4b5fd; }
+    .timeline-node.convergence.done { background: #3b0764; }
 
     .timeline-label {
         font-family: 'Inter', sans-serif;
@@ -1140,6 +1142,7 @@ if missing_keys:
 
 from strategy_debate import (
     call_claude, call_perplexity, call_chatgpt, call_synthesis,
+    call_convergence_check,
     parse_structured_output, compress_critique_log, save_intermediate,
 )
 
@@ -1205,6 +1208,44 @@ with st.sidebar:
         Geschaetzte Dauer: ~{int(est_minutes)} Min.
     </div>
     ''', unsafe_allow_html=True)
+
+    # Auto-Stop / Convergence detection
+    st.markdown('''
+    <div style="
+        font-family: 'Inter', sans-serif;
+        font-size: 0.78rem;
+        color: #8892a6;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        font-weight: 600;
+        margin-bottom: 0.3rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid #1e293b;
+    ">Konvergenz-Erkennung</div>
+    ''', unsafe_allow_html=True)
+
+    auto_stop = st.toggle(
+        "Auto-Stop bei Konvergenz",
+        value=True,
+        help="Stoppt automatisch, wenn weitere Runden keinen Mehrwert mehr bringen.",
+    )
+
+    if auto_stop:
+        convergence_threshold = st.slider(
+            "Confidence-Schwelle",
+            min_value=50, max_value=95, value=70, step=5,
+            label_visibility="visible",
+            help="Wie sicher muss die Erkennung sein? Hoeher = konservativer (laeuft eher weiter).",
+        )
+        min_rounds = st.slider(
+            "Mindestrunden",
+            min_value=1, max_value=rounds, value=min(2, rounds),
+            label_visibility="visible",
+            help="So viele Runden laufen mindestens, bevor Auto-Stop greifen kann.",
+        )
+    else:
+        convergence_threshold = 70
+        min_rounds = 2
 
     # Model configuration in expander
     st.markdown('''
@@ -1527,9 +1568,15 @@ if start_debate and input_text is not None:
 
     step_count = 0
     debate_error = False
+    converged = False
+    convergence_reason = None
+    convergence_confidence = 0
+    rounds_completed = 0
 
     for r in range(1, rounds + 1):
         critique_for_round = compress_critique_log(full_log)
+        doc_before_round = text
+        round_critiques = ""
 
         for i, (name, cls, letter, func, model) in enumerate(steps):
             step_count += 1
@@ -1554,17 +1601,15 @@ if start_debate and input_text is not None:
                 doc, critique = parse_structured_output(raw)
                 text = doc
                 full_log += f"\n[Runde {r} -- {name}]\n{critique}\n"
+                round_critiques += f"[{name}]\n{critique}\n\n"
                 save_intermediate(output_dir, r, name.lower(), doc, critique)
 
                 # Add critique to accordion
-                badge_class = cls
                 with critique_container.expander(
                     f"Runde {r} -- {name}",
                     expanded=False,
                 ):
-                    # Render critique with color-coded tag markers
                     formatted_critique = critique
-                    # Highlight tags
                     formatted_critique = formatted_critique.replace(
                         "[GEAENDERT]", "**[GEAENDERT]**"
                     ).replace(
@@ -1584,15 +1629,65 @@ if start_debate and input_text is not None:
                 debate_error = True
                 st.stop()
 
+        rounds_completed = r
+
+        # --- Konvergenz-Check nach abgeschlossener Runde ---
+        if auto_stop and r >= min_rounds and r < rounds:
+            status_placeholder.markdown(f'''
+            <div class="status-card working">
+                <div class="status-icon synthesis">K</div>
+                <div class="status-text">
+                    <div class="name">Konvergenz-Check</div>
+                    <div class="detail">Pruefe ob weitere Runden Mehrwert bringen...</div>
+                </div>
+                <div class="status-spinner"></div>
+            </div>
+            ''', unsafe_allow_html=True)
+
+            try:
+                should_stop, confidence, reason = call_convergence_check(
+                    doc_before_round, text, round_critiques, r, claude_model,
+                )
+
+                if should_stop and confidence >= convergence_threshold:
+                    converged = True
+                    convergence_reason = reason
+                    convergence_confidence = confidence
+
+                    # Show convergence detection in critique container
+                    with critique_container.expander(
+                        f"Konvergenz erkannt nach Runde {r}",
+                        expanded=True,
+                    ):
+                        st.markdown(
+                            f"**Verdict:** STOP (Confidence: {confidence}%)\n\n"
+                            f"**Begruendung:** {reason}"
+                        )
+                    break
+                else:
+                    # Show that check happened but debate continues
+                    with critique_container.expander(
+                        f"Konvergenz-Check nach Runde {r}",
+                        expanded=False,
+                    ):
+                        verdict = "STOP" if should_stop else "CONTINUE"
+                        st.markdown(
+                            f"**Verdict:** {verdict} (Confidence: {confidence}%)\n\n"
+                            f"**Begruendung:** {reason}"
+                        )
+
+            except Exception:
+                pass  # Konvergenz-Fehler stoppen nicht die Debatte
+
     # ---------------------------------------------------------------------------
     # Final Synthesis
     # ---------------------------------------------------------------------------
 
-    step_count += 1
+    step_count = rounds_completed * 3 + 1
 
     # Update timeline to synthesis
     timeline_placeholder.markdown(
-        build_timeline_html(rounds, rounds, 3),
+        build_timeline_html(rounds_completed if converged else rounds, rounds_completed, 3),
         unsafe_allow_html=True,
     )
 
@@ -1603,7 +1698,7 @@ if start_debate and input_text is not None:
         ),
         unsafe_allow_html=True,
     )
-    progress_bar.progress(step_count / total_steps)
+    progress_bar.progress(0.9)
 
     try:
         result = call_synthesis(text, full_log, claude_model)
@@ -1617,7 +1712,10 @@ if start_debate and input_text is not None:
 
     # Final timeline state
     timeline_placeholder.markdown(
-        build_timeline_html(rounds, rounds, 3, total_done=True),
+        build_timeline_html(
+            rounds_completed if converged else rounds,
+            rounds_completed, 3, total_done=True,
+        ),
         unsafe_allow_html=True,
     )
 
@@ -1626,14 +1724,38 @@ if start_debate and input_text is not None:
 
     with progress_col:
         # Success banner
+        if converged:
+            banner_detail = (
+                f"{rounds_completed} von {rounds} Runden &middot; "
+                f"Auto-Stop bei {convergence_confidence}% Confidence &middot; "
+                f"3 KI-Perspektiven &middot; 1 synthetisiertes Ergebnis"
+            )
+            banner_subtitle = f'''
+                <div style="
+                    font-family: 'Inter', sans-serif;
+                    font-size: 0.82rem;
+                    color: #d4a843;
+                    margin-top: 0.5rem;
+                    padding: 0.5rem 1rem;
+                    background: rgba(201, 149, 45, 0.08);
+                    border: 1px solid rgba(201, 149, 45, 0.2);
+                    border-radius: 8px;
+                    display: inline-block;
+                ">{convergence_reason}</div>
+            '''
+        else:
+            banner_detail = (
+                f"{rounds_completed} Runden &middot; {rounds_completed * 3} Kritik-Durchlaeufe &middot; "
+                f"3 KI-Perspektiven &middot; 1 synthetisiertes Ergebnis"
+            )
+            banner_subtitle = ""
+
         st.markdown(f'''
         <div class="success-banner">
             <div class="success-icon">&#127942;</div>
             <div class="success-title">Debatte abgeschlossen</div>
-            <div class="success-detail">
-                {rounds} Runden &middot; {rounds * 3} Kritik-Durchlaeufe &middot;
-                3 KI-Perspektiven &middot; 1 synthetisiertes Ergebnis
-            </div>
+            <div class="success-detail">{banner_detail}</div>
+            {banner_subtitle}
         </div>
         ''', unsafe_allow_html=True)
 

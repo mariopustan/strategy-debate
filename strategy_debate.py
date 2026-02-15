@@ -98,6 +98,31 @@ Antworte EXAKT in diesem Format:
 - [DISSENS] Widerspruch zu vorherigem Reviewer: Deine Position und warum
 ---ENDE---"""
 
+SYSTEM_CONVERGENCE = """\
+Du bist ein Meta-Reviewer, der beurteilt, ob weitere Optimierungsrunden \
+eines Strategiedokuments noch substanziellen Mehrwert bringen.
+
+Du erhältst:
+- Das Dokument VOR der letzten Runde
+- Das Dokument NACH der letzten Runde
+- Die Kritikpunkte der letzten Runde
+
+Bewerte anhand dieser Kriterien:
+1. **Änderungsvolumen**: Wurde noch viel am Text verändert oder nur Formulierungen?
+2. **Kritik-Schwere**: Sind die Kritikpunkte strukturell oder nur kosmetisch?
+3. **Neue Aspekte**: Kommen noch neue inhaltliche Punkte dazu?
+4. **Dissens-Stabilität**: Wiederholen sich die DISSENS-Punkte aus früheren Runden?
+
+Antworte EXAKT in diesem Format:
+
+---VERDICT---
+STOP oder CONTINUE
+---CONFIDENCE---
+(Zahl von 0-100, wie sicher du dir bist)
+---REASON---
+(2-3 Sätze Begründung auf Deutsch)
+---ENDE---"""
+
 SYSTEM_SYNTHESIS = """\
 Du bist ein Meta-Synthese-Moderator. Du erhältst ein Strategiedokument, \
 das in mehreren Runden von drei KI-Systemen (Claude, Perplexity, ChatGPT) \
@@ -230,6 +255,43 @@ def call_chatgpt(text: str, critique_log: str, model: str) -> str:
     return _retry(_call)
 
 
+def call_convergence_check(doc_before: str, doc_after: str, critique: str,
+                           round_num: int, model: str) -> tuple[bool, int, str]:
+    """Prüft ob weitere Runden noch Mehrwert bringen.
+
+    Returns: (should_stop, confidence, reason)
+    """
+    user_msg = (
+        f"Runde {round_num} wurde gerade abgeschlossen.\n\n"
+        f"=== DOKUMENT VOR DER RUNDE ===\n{doc_before}\n\n"
+        f"=== DOKUMENT NACH DER RUNDE ===\n{doc_after}\n\n"
+        f"=== KRITIKPUNKTE DIESER RUNDE ===\n{critique}\n"
+    )
+
+    def _call():
+        msg = get_claude().messages.create(
+            model=model,
+            max_tokens=1024,
+            system=SYSTEM_CONVERGENCE,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        return msg.content[0].text
+
+    raw = _retry(_call)
+
+    # Parse verdict
+    import re as _re
+    verdict_match = _re.search(r"---VERDICT---\s*\n\s*(STOP|CONTINUE)", raw)
+    conf_match = _re.search(r"---CONFIDENCE---\s*\n\s*(\d+)", raw)
+    reason_match = _re.search(r"---REASON---\s*\n(.*?)---ENDE---", raw, _re.DOTALL)
+
+    should_stop = verdict_match and verdict_match.group(1).strip() == "STOP"
+    confidence = int(conf_match.group(1)) if conf_match else 50
+    reason = reason_match.group(1).strip() if reason_match else "Keine Begründung extrahiert."
+
+    return should_stop, confidence, reason
+
+
 def call_synthesis(text: str, full_log: str, model: str) -> str:
     user_msg = (
         f"Finaler Dokumenttext nach allen Runden:\n\n{text}\n\n"
@@ -328,8 +390,21 @@ def find_resume_point(output_dir: Path, total_rounds: int) -> tuple[int, str, st
 
 def run_debate(input_text: str, rounds: int, output_dir: Path,
                claude_model: str, openai_model: str, perplexity_model: str,
-               resume: bool, verbose: bool) -> tuple[str, str]:
-    """Führt den Round-Robin-Debattenprozess durch."""
+               resume: bool, verbose: bool,
+               auto_stop: bool = True, min_rounds: int = 2,
+               convergence_threshold: int = 70,
+               on_convergence=None) -> tuple[str, str, int, str | None]:
+    """Führt den Round-Robin-Debattenprozess durch.
+
+    Args:
+        auto_stop: Automatisch stoppen bei Konvergenz.
+        min_rounds: Mindestanzahl Runden bevor Auto-Stop greifen kann.
+        convergence_threshold: Confidence-Schwelle (0-100) für Auto-Stop.
+        on_convergence: Optionaler Callback (should_stop, confidence, reason, round_num).
+
+    Returns: (text, full_log, rounds_completed, stop_reason)
+        stop_reason ist None wenn alle Runden durchlaufen wurden.
+    """
 
     text = input_text
     full_log = ""
@@ -351,10 +426,14 @@ def run_debate(input_text: str, rounds: int, output_dir: Path,
         ("ChatGPT", call_chatgpt, openai_model, "bold green"),
     ]
 
+    rounds_completed = 0
+
     for r in range(start_round, rounds + 1):
         console.print(Panel(f"Runde {r}/{rounds}", style="bold magenta"))
 
         critique_for_round = compress_critique_log(full_log)
+        doc_before_round = text
+        round_critiques = ""
 
         for i, (name, func, model, style) in enumerate(steps):
             if r == start_round and i < start_step:
@@ -372,6 +451,7 @@ def run_debate(input_text: str, rounds: int, output_dir: Path,
             text = doc
 
             full_log += f"\n[Runde {r} – {name}]\n{critique}\n"
+            round_critiques += f"[{name}]\n{critique}\n\n"
 
             save_intermediate(output_dir, r, name.lower(), doc, critique)
 
@@ -384,7 +464,40 @@ def run_debate(input_text: str, rounds: int, output_dir: Path,
 
             console.print(f"  [{style}]{name}[/{style}] [green]fertig[/green]")
 
-    return text, full_log
+        rounds_completed = r
+
+        # --- Konvergenz-Check nach jeder abgeschlossenen Runde ---
+        if auto_stop and r >= min_rounds and r < rounds:
+            console.print(f"  [dim]Konvergenz-Check...[/dim]")
+
+            try:
+                should_stop, confidence, reason = call_convergence_check(
+                    doc_before_round, text, round_critiques, r, claude_model,
+                )
+
+                if on_convergence:
+                    on_convergence(should_stop, confidence, reason, r)
+
+                if verbose:
+                    verdict = "STOP" if should_stop else "CONTINUE"
+                    console.print(
+                        f"  [dim]Verdict: {verdict} (Confidence: {confidence}%) "
+                        f"– {reason}[/dim]"
+                    )
+
+                if should_stop and confidence >= convergence_threshold:
+                    console.print(
+                        f"\n[bold yellow]Auto-Stop nach Runde {r}: "
+                        f"Konvergenz erkannt (Confidence: {confidence}%)[/bold yellow]"
+                    )
+                    console.print(f"  [yellow]{reason}[/yellow]")
+                    return text, full_log, rounds_completed, reason
+
+            except Exception as e:
+                # Konvergenz-Check-Fehler stoppen nicht die Debatte
+                console.print(f"  [dim yellow]Konvergenz-Check fehlgeschlagen: {e}[/dim yellow]")
+
+    return text, full_log, rounds_completed, None
 
 
 def final_synthesis(text: str, full_log: str, claude_model: str, verbose: bool) -> str:
@@ -424,11 +537,15 @@ def parse_args():
         epilog="Beispiel:\n  python strategy_debate.py --input strategie.md --rounds 4 --output ergebnis.md",
     )
     parser.add_argument("--input", required=True, help="Eingabedokument (Markdown/Text)")
-    parser.add_argument("--rounds", type=int, default=4, help="Anzahl Runden (Standard: 4)")
+    parser.add_argument("--rounds", type=int, default=4, help="Max. Anzahl Runden (Standard: 4)")
     parser.add_argument("--output", required=True, help="Ausgabedatei für finales Dokument")
     parser.add_argument("--output-dir", default="debate_output", help="Verzeichnis für Zwischendateien")
     parser.add_argument("--resume", action="store_true", help="Fortsetzen ab letzter erfolgreicher Stelle")
     parser.add_argument("--verbose", action="store_true", help="Ausführliche Konsolenausgabe")
+    parser.add_argument("--no-auto-stop", action="store_true", help="Konvergenz-Erkennung deaktivieren")
+    parser.add_argument("--min-rounds", type=int, default=2, help="Mindestrunden vor Auto-Stop (Standard: 2)")
+    parser.add_argument("--convergence-threshold", type=int, default=70,
+                        help="Confidence-Schwelle für Auto-Stop, 0-100 (Standard: 70)")
     parser.add_argument("--claude-model", default="claude-sonnet-4-20250514", help="Claude-Modell")
     parser.add_argument("--openai-model", default="gpt-4o", help="ChatGPT-Modell")
     parser.add_argument("--perplexity-model", default="sonar-pro", help="Perplexity-Modell")
@@ -447,16 +564,19 @@ def main():
     input_text = input_path.read_text(encoding="utf-8")
     output_dir = Path(args.output_dir)
 
+    auto_stop = not args.no_auto_stop
+
     console.print(Panel(
         f"[bold]Strategy Debate[/bold]\n"
         f"Input: {args.input}\n"
-        f"Runden: {args.rounds}\n"
+        f"Max. Runden: {args.rounds}\n"
+        f"Auto-Stop: {'Ja (Threshold: {0}%, Min. Runden: {1})'.format(args.convergence_threshold, args.min_rounds) if auto_stop else 'Nein'}\n"
         f"Modelle: Claude={args.claude_model}, ChatGPT={args.openai_model}, Perplexity={args.perplexity_model}",
         title="Konfiguration",
         style="bold white",
     ))
 
-    text, full_log = run_debate(
+    text, full_log, rounds_completed, stop_reason = run_debate(
         input_text=input_text,
         rounds=args.rounds,
         output_dir=output_dir,
@@ -465,12 +585,19 @@ def main():
         perplexity_model=args.perplexity_model,
         resume=args.resume,
         verbose=args.verbose,
+        auto_stop=auto_stop,
+        min_rounds=args.min_rounds,
+        convergence_threshold=args.convergence_threshold,
     )
 
     result = final_synthesis(text, full_log, args.claude_model, args.verbose)
 
     Path(args.output).write_text(result, encoding="utf-8")
     console.print(f"\n[bold green]Fertig! Ergebnis: {args.output}[/bold green]")
+    if stop_reason:
+        console.print(f"[yellow]Konvergenz nach {rounds_completed}/{args.rounds} Runden: {stop_reason}[/yellow]")
+    else:
+        console.print(f"[dim]Alle {rounds_completed} Runden durchlaufen[/dim]")
     console.print(f"[dim]Zwischendateien: {output_dir}/[/dim]")
 
 
