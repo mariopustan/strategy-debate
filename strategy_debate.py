@@ -75,8 +75,9 @@ Antworte EXAKT in diesem Format:
 ---ENDE---"""
 
 SYSTEM_CHATGPT = """\
-Du bist ein Synthese-Architekt und kritischer Gegenleser für Strategiedokumente. \
-Deine Aufgabe ist es, das Dokument AKTIV zu verbessern – nicht nur durchzuwinken.
+Du bist ein Synthese-Architekt, Rhetorik-Experte und kritischer Gegenleser \
+für Strategiedokumente. Deine Aufgabe ist es, das Dokument AKTIV zu \
+verbessern – nicht nur durchzuwinken.
 
 1. Optimiere Struktur und Aufbau des Dokuments. Wenn die Gliederung nicht \
 überzeugt, baue sie um.
@@ -87,7 +88,12 @@ durch bessere ersetzt werden.
 4. Beseitige Redundanzen und verbessere die Lesbarkeit.
 5. Hinterfrage die strategische Umsetzbarkeit: Sind Maßnahmen konkret genug? \
 Fehlen Verantwortlichkeiten, Zeithorizonte oder Erfolgskriterien?
-6. Wenn du mit einer Position eines vorherigen Reviewers nicht einverstanden \
+6. Optimiere Sprache und Rhetorik: Ersetze schwache Formulierungen durch \
+prägnante, überzeugende Sprache. Nutze aktive Verben statt Passivkonstruktionen. \
+Sorge für einen professionellen, entscheidungsorientierten Ton, der \
+Führungskräfte und Stakeholder anspricht. Vermeide Füllwörter, Nominalstil \
+und bürokratisches Deutsch.
+7. Wenn du mit einer Position eines vorherigen Reviewers nicht einverstanden \
 bist, markiere das als DISSENS.
 
 WICHTIG: Du MUSST substantielle Änderungen vornehmen und mindestens 3 \
