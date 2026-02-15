@@ -5,6 +5,7 @@ Streamlit-App für die Multi-KI-Dokumentenoptimierung.
 Production-ready UI/UX mit Premium Think-Tank Aesthetic.
 """
 
+import hashlib
 import os
 import uuid
 from pathlib import Path
@@ -22,8 +23,120 @@ st.set_page_config(
     page_title="Maure's Strategie Club",
     page_icon="https://em-content.zobj.net/source/apple/391/classical-building_1f3db-fe0f.png",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+# Passkey hash (SHA-256). Set MSC_PASSKEY_HASH env var or default to hash of "maure2024"
+_DEFAULT_HASH = hashlib.sha256("maure2024".encode()).hexdigest()
+PASSKEY_HASH = os.environ.get("MSC_PASSKEY_HASH", _DEFAULT_HASH)
+
+
+def _check_auth():
+    """Returns True if the user is authenticated."""
+    return st.session_state.get("authenticated", False)
+
+
+def _show_login():
+    """Renders the login screen and blocks further execution until authenticated."""
+    st.markdown("""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+        .stApp {
+            background: linear-gradient(180deg, #080c18 0%, #0a0f1e 20%, #0d1425 100%);
+        }
+        .stApp > header { background: transparent !important; }
+        #MainMenu { visibility: hidden; }
+        footer { visibility: hidden; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Centered login card
+    _, col, _ = st.columns([1.5, 2, 1.5])
+    with col:
+        st.markdown('''
+        <div style="
+            text-align: center;
+            padding: 3rem 0 1.5rem 0;
+        ">
+            <div style="
+                font-family: 'Lora', Georgia, serif;
+                font-size: 2.2rem;
+                font-weight: 700;
+                color: #f8f9fc;
+                letter-spacing: 0.02em;
+            ">Maure's <span style="
+                background: linear-gradient(135deg, #c9952d 0%, #dfbc5e 50%, #c9952d 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+            ">Strategie Club</span></div>
+            <div style="
+                font-family: 'Source Sans 3', sans-serif;
+                font-size: 0.9rem;
+                color: #4a6085;
+                margin-top: 0.5rem;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            ">Zugang nur für autorisierte Nutzer</div>
+        </div>
+        ''', unsafe_allow_html=True)
+
+        st.markdown('''
+        <div style="
+            background: #111827;
+            border: 1px solid #1e293b;
+            border-radius: 16px;
+            padding: 2rem;
+            margin-top: 1rem;
+        ">
+        ''', unsafe_allow_html=True)
+
+        passkey = st.text_input(
+            "Passkey",
+            type="password",
+            placeholder="Passkey eingeben...",
+            label_visibility="collapsed",
+        )
+
+        login_clicked = st.button("Anmelden", type="primary", use_container_width=True)
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if login_clicked:
+            if hashlib.sha256(passkey.encode()).hexdigest() == PASSKEY_HASH:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.markdown('''
+                <div style="
+                    text-align: center;
+                    font-family: 'Source Sans 3', sans-serif;
+                    color: #f87171;
+                    font-size: 0.9rem;
+                    margin-top: 1rem;
+                ">Falscher Passkey. Bitte erneut versuchen.</div>
+                ''', unsafe_allow_html=True)
+
+        st.markdown('''
+        <div style="
+            text-align: center;
+            margin-top: 2rem;
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.72rem;
+            color: #2e4066;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        ">Multi-AI Strategy Debate Platform</div>
+        ''', unsafe_allow_html=True)
+
+
+if not _check_auth():
+    _show_login()
+    st.stop()
 
 # ---------------------------------------------------------------------------
 # Design Tokens & CSS
@@ -70,7 +183,7 @@ st.markdown("""
     /* ================================================================
        FONTS
        ================================================================ */
-    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
     /* ================================================================
        GLOBAL OVERRIDES
@@ -100,13 +213,13 @@ st.markdown("""
 
     section[data-testid="stSidebar"] .stMarkdown h3,
     section[data-testid="stSidebar"] .stMarkdown h4 {
-        font-family: 'Cormorant Garamond', Georgia, serif !important;
+        font-family: 'Lora', Georgia, serif !important;
         color: #c9952d !important;
         letter-spacing: 0.03em;
     }
 
     section[data-testid="stSidebar"] label {
-        font-family: 'Inter', -apple-system, sans-serif !important;
+        font-family: 'Source Sans 3', -apple-system, sans-serif !important;
         color: #8892a6 !important;
         font-size: 0.85rem !important;
         font-weight: 500 !important;
@@ -187,7 +300,7 @@ st.markdown("""
     }
 
     .hero-title {
-        font-family: 'Cormorant Garamond', Georgia, serif;
+        font-family: 'Lora', Georgia, serif;
         font-size: clamp(2rem, 5vw, 3.2rem);
         font-weight: 700;
         color: #f8f9fc;
@@ -212,7 +325,7 @@ st.markdown("""
     }
 
     .hero-subtitle {
-        font-family: 'Inter', -apple-system, sans-serif;
+        font-family: 'Source Sans 3', -apple-system, sans-serif;
         font-size: clamp(0.95rem, 2vw, 1.1rem);
         color: #8892a6;
         font-weight: 400;
@@ -229,7 +342,7 @@ st.markdown("""
         background: rgba(201, 149, 45, 0.08);
         border: 1px solid rgba(201, 149, 45, 0.2);
         border-radius: 100px;
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         font-size: 0.78rem;
         color: #d4a843;
         letter-spacing: 0.06em;
@@ -271,7 +384,7 @@ st.markdown("""
     }
 
     .stTabs [data-baseweb="tab"] {
-        font-family: 'Inter', sans-serif !important;
+        font-family: 'Source Sans 3', sans-serif !important;
         font-weight: 500;
         font-size: 0.9rem;
         color: #8892a6 !important;
@@ -309,7 +422,7 @@ st.markdown("""
         border: 1px solid #1e293b !important;
         border-radius: 12px !important;
         color: #d1d5e0 !important;
-        font-family: 'Inter', sans-serif !important;
+        font-family: 'Source Sans 3', sans-serif !important;
         font-size: 1rem !important;
         line-height: 1.6 !important;
         padding: 1rem !important;
@@ -326,7 +439,7 @@ st.markdown("""
     }
 
     .stTextArea label {
-        font-family: 'Inter', sans-serif !important;
+        font-family: 'Source Sans 3', sans-serif !important;
         color: #b0c1d8 !important;
         font-size: 0.95rem !important;
         font-weight: 500 !important;
@@ -348,7 +461,7 @@ st.markdown("""
     }
 
     .stFileUploader label {
-        font-family: 'Inter', sans-serif !important;
+        font-family: 'Source Sans 3', sans-serif !important;
         color: #b0c1d8 !important;
         font-size: 0.95rem !important;
         font-weight: 500 !important;
@@ -361,7 +474,7 @@ st.markdown("""
     .stButton > button[data-testid="stBaseButton-primary"] {
         background: linear-gradient(135deg, #c9952d 0%, #d4a843 100%) !important;
         color: #0a0f1e !important;
-        font-family: 'Inter', sans-serif !important;
+        font-family: 'Source Sans 3', sans-serif !important;
         font-weight: 600 !important;
         font-size: 1rem !important;
         letter-spacing: 0.03em;
@@ -398,7 +511,7 @@ st.markdown("""
         color: #c9952d !important;
         border: 1px solid #c9952d !important;
         border-radius: 12px !important;
-        font-family: 'Inter', sans-serif !important;
+        font-family: 'Source Sans 3', sans-serif !important;
         font-weight: 500 !important;
         transition: all 0.2s ease !important;
     }
@@ -412,7 +525,7 @@ st.markdown("""
        EXPANDERS
        ================================================================ */
     .streamlit-expanderHeader {
-        font-family: 'Inter', sans-serif !important;
+        font-family: 'Source Sans 3', sans-serif !important;
         font-weight: 500 !important;
         font-size: 0.95rem !important;
         color: #b0c1d8 !important;
@@ -441,7 +554,7 @@ st.markdown("""
     }
 
     details summary {
-        font-family: 'Inter', sans-serif !important;
+        font-family: 'Source Sans 3', sans-serif !important;
         font-weight: 500 !important;
         color: #b0c1d8 !important;
         padding: 0.75rem 1rem !important;
@@ -506,7 +619,7 @@ st.markdown("""
         justify-content: center;
         font-size: 0.75rem;
         font-weight: 600;
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         border: 2px solid;
         transition: all 0.3s ease;
         position: relative;
@@ -550,7 +663,7 @@ st.markdown("""
     .timeline-node.convergence.done { background: #3b0764; }
 
     .timeline-label {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         font-size: 0.7rem;
         color: #8892a6;
         margin-top: 0.4rem;
@@ -594,7 +707,7 @@ st.markdown("""
         display: flex;
         align-items: center;
         gap: 1rem;
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         transition: all 0.3s ease;
     }
 
@@ -703,7 +816,7 @@ st.markdown("""
         border-radius: 6px;
         font-size: 0.75rem;
         font-weight: 600;
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         letter-spacing: 0.02em;
     }
 
@@ -729,7 +842,7 @@ st.markdown("""
     }
 
     .critique-round {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         font-size: 0.82rem;
         color: #8892a6;
     }
@@ -743,7 +856,7 @@ st.markdown("""
     }
 
     .result-header h2 {
-        font-family: 'Cormorant Garamond', Georgia, serif;
+        font-family: 'Lora', Georgia, serif;
         font-size: 2rem;
         font-weight: 700;
         color: #f8f9fc;
@@ -751,7 +864,7 @@ st.markdown("""
     }
 
     .result-header p {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         color: #8892a6;
         font-size: 0.95rem;
     }
@@ -762,7 +875,7 @@ st.markdown("""
         border-radius: 16px;
         padding: 2.5rem;
         margin: 1rem 0 1.5rem 0;
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         font-size: 1rem;
         line-height: 1.75;
         color: #d1d5e0;
@@ -771,7 +884,7 @@ st.markdown("""
 
     .result-document h1, .result-document h2, .result-document h3,
     .result-document h4, .result-document h5, .result-document h6 {
-        font-family: 'Cormorant Garamond', Georgia, serif !important;
+        font-family: 'Lora', Georgia, serif !important;
         color: #f8f9fc !important;
         margin-top: 1.5em;
         margin-bottom: 0.5em;
@@ -869,7 +982,7 @@ st.markdown("""
     }
 
     .success-title {
-        font-family: 'Cormorant Garamond', Georgia, serif;
+        font-family: 'Lora', Georgia, serif;
         font-size: 1.6rem;
         font-weight: 700;
         color: #f8f9fc;
@@ -877,7 +990,7 @@ st.markdown("""
     }
 
     .success-detail {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         font-size: 0.9rem;
         color: #8892a6;
     }
@@ -898,14 +1011,14 @@ st.markdown("""
     }
 
     .empty-state h3 {
-        font-family: 'Cormorant Garamond', Georgia, serif;
+        font-family: 'Lora', Georgia, serif;
         font-size: 1.4rem;
         color: #7b92b2;
         margin-bottom: 0.5rem;
     }
 
     .empty-state p {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         font-size: 0.9rem;
         max-width: 400px;
         margin: 0 auto;
@@ -923,7 +1036,7 @@ st.markdown("""
     }
 
     .footer-brand {
-        font-family: 'Cormorant Garamond', Georgia, serif;
+        font-family: 'Lora', Georgia, serif;
         font-size: 1.05rem;
         color: #4a6085;
         letter-spacing: 0.04em;
@@ -934,7 +1047,7 @@ st.markdown("""
     }
 
     .footer-sub {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         font-size: 0.72rem;
         color: #2e4066;
         margin-top: 0.3rem;
@@ -973,7 +1086,7 @@ st.markdown("""
 
     /* Metric value */
     [data-testid="stMetricValue"] {
-        font-family: 'Cormorant Garamond', Georgia, serif !important;
+        font-family: 'Lora', Georgia, serif !important;
         color: #c9952d !important;
     }
 
@@ -1123,11 +1236,11 @@ if missing_keys:
         border-radius: 12px;
         padding: 1.25rem 1.5rem;
         margin: 1rem 0;
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         color: #fca5a5;
         font-size: 0.95rem;
     ">
-        <strong style="color: #f87171;">Fehlende API-Schluessel:</strong><br>
+        <strong style="color: #f87171;">Fehlende API-Schlüssel:</strong><br>
         {', '.join(missing_keys)}<br>
         <span style="color: #8892a6; font-size: 0.85rem;">
             Bitte als Umgebungsvariablen oder in einer .env-Datei konfigurieren.
@@ -1159,14 +1272,14 @@ with st.sidebar:
         margin-bottom: 1.5rem;
     ">
         <div style="
-            font-family: 'Cormorant Garamond', Georgia, serif;
+            font-family: 'Lora', Georgia, serif;
             font-size: 1.3rem;
             font-weight: 700;
             color: #f8f9fc;
             letter-spacing: 0.02em;
         ">Einstellungen</div>
         <div style="
-            font-family: 'Inter', sans-serif;
+            font-family: 'Source Sans 3', sans-serif;
             font-size: 0.72rem;
             color: #4a6085;
             letter-spacing: 0.05em;
@@ -1179,7 +1292,7 @@ with st.sidebar:
     # Round count
     st.markdown('''
     <div style="
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         font-size: 0.78rem;
         color: #8892a6;
         text-transform: uppercase;
@@ -1192,27 +1305,27 @@ with st.sidebar:
         "Anzahl Runden",
         min_value=1, max_value=8, value=4,
         label_visibility="collapsed",
-        help="Mehr Runden ergeben tiefere Analyse, dauern aber laenger.",
+        help="Mehr Runden ergeben tiefere Analyse, dauern aber länger.",
     )
 
     # Estimated time
     est_minutes = rounds * 3 * 0.5 + 0.5  # rough estimate: 30s per call + synthesis
     st.markdown(f'''
     <div style="
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         font-size: 0.78rem;
         color: #4a6085;
         margin-top: -0.5rem;
         margin-bottom: 1.5rem;
     ">
-        Geschaetzte Dauer: ~{int(est_minutes)} Min.
+        Geschätzte Dauer: ~{int(est_minutes)} Min.
     </div>
     ''', unsafe_allow_html=True)
 
     # Auto-Stop / Convergence detection
     st.markdown('''
     <div style="
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         font-size: 0.78rem;
         color: #8892a6;
         text-transform: uppercase;
@@ -1235,7 +1348,7 @@ with st.sidebar:
             "Confidence-Schwelle",
             min_value=50, max_value=95, value=70, step=5,
             label_visibility="visible",
-            help="Wie sicher muss die Erkennung sein? Hoeher = konservativer (laeuft eher weiter).",
+            help="Wie sicher muss die Erkennung sein? Höher = konservativer (läuft eher weiter).",
         )
         min_rounds = st.slider(
             "Mindestrunden",
@@ -1250,7 +1363,7 @@ with st.sidebar:
     # Model configuration in expander
     st.markdown('''
     <div style="
-        font-family: 'Inter', sans-serif;
+        font-family: 'Source Sans 3', sans-serif;
         font-size: 0.78rem;
         color: #8892a6;
         text-transform: uppercase;
@@ -1265,13 +1378,13 @@ with st.sidebar:
     with st.expander("Modellkonfiguration", expanded=False):
         st.markdown('''
         <div style="
-            font-family: 'Inter', sans-serif;
+            font-family: 'Source Sans 3', sans-serif;
             font-size: 0.78rem;
             color: #4a6085;
             margin-bottom: 0.8rem;
             line-height: 1.5;
         ">Passe die verwendeten KI-Modelle an. Standard-Einstellungen
-        sind fuer die meisten Anwendungsfaelle optimal.</div>
+        sind für die meisten Anwendungsfälle optimal.</div>
         ''', unsafe_allow_html=True)
 
         claude_model = st.text_input(
@@ -1298,7 +1411,7 @@ with st.sidebar:
         border-top: 1px solid #1e293b;
     ">
         <div style="
-            font-family: 'Inter', sans-serif;
+            font-family: 'Source Sans 3', sans-serif;
             font-size: 0.78rem;
             color: #8892a6;
             text-transform: uppercase;
@@ -1320,7 +1433,7 @@ with st.sidebar:
             align-items: center;
             gap: 0.6rem;
             margin-bottom: 0.5rem;
-            font-family: 'Inter', sans-serif;
+            font-family: 'Source Sans 3', sans-serif;
             font-size: 0.82rem;
         ">
             <div style="
@@ -1357,12 +1470,12 @@ with st.sidebar:
         border-top: 1px solid #1e293b;
     ">
         <div style="
-            font-family: 'Cormorant Garamond', Georgia, serif;
+            font-family: 'Lora', Georgia, serif;
             font-size: 0.9rem;
             color: #4a6085;
         ">Maure's <span style="color: #c9952d;">Strategie Club</span></div>
         <div style="
-            font-family: 'Inter', sans-serif;
+            font-family: 'Source Sans 3', sans-serif;
             font-size: 0.65rem;
             color: #2e4066;
             letter-spacing: 0.05em;
@@ -1395,7 +1508,7 @@ with input_col_main:
     with tab_prompt:
         st.markdown('''
         <div style="
-            font-family: 'Cormorant Garamond', Georgia, serif;
+            font-family: 'Lora', Georgia, serif;
             font-size: 1.3rem;
             font-weight: 600;
             color: #f8f9fc;
@@ -1403,12 +1516,12 @@ with input_col_main:
             margin-top: 0.5rem;
         ">Ihre Strategie-Idee</div>
         <div style="
-            font-family: 'Inter', sans-serif;
+            font-family: 'Source Sans 3', sans-serif;
             font-size: 0.85rem;
             color: #8892a6;
             margin-bottom: 1rem;
             line-height: 1.5;
-        ">Beschreiben Sie Ihre Strategie, Geschaeftsidee oder Fragestellung.
+        ">Beschreiben Sie Ihre Strategie, Geschäftsidee oder Fragestellung.
         Die drei KI-Systeme werden Ihren Text analysieren, kritisieren und
         systematisch verbessern.</div>
         ''', unsafe_allow_html=True)
@@ -1416,8 +1529,8 @@ with input_col_main:
         prompt_text = st.text_area(
             "Strategie-Idee oder Fragestellung",
             height=220,
-            placeholder="z.B.: Entwickle eine Go-to-Market-Strategie fuer ein SaaS-Produkt "
-                        "im Bereich Compliance-Management fuer den deutschen Mittelstand...",
+            placeholder="z.B.: Entwickle eine Go-to-Market-Strategie für ein SaaS-Produkt "
+                        "im Bereich Compliance-Management für den deutschen Mittelstand...",
             label_visibility="collapsed",
         )
         if prompt_text.strip():
@@ -1426,7 +1539,7 @@ with input_col_main:
     with tab_upload:
         st.markdown('''
         <div style="
-            font-family: 'Cormorant Garamond', Georgia, serif;
+            font-family: 'Lora', Georgia, serif;
             font-size: 1.3rem;
             font-weight: 600;
             color: #f8f9fc;
@@ -1434,13 +1547,13 @@ with input_col_main:
             margin-top: 0.5rem;
         ">Dokument hochladen</div>
         <div style="
-            font-family: 'Inter', sans-serif;
+            font-family: 'Source Sans 3', sans-serif;
             font-size: 0.85rem;
             color: #8892a6;
             margin-bottom: 1rem;
             line-height: 1.5;
         ">Laden Sie ein bestehendes Strategiedokument hoch.
-        Unterstuetzte Formate: Markdown (.md) und Text (.txt).</div>
+        Unterstützte Formate: Markdown (.md) und Text (.txt).</div>
         ''', unsafe_allow_html=True)
 
         uploaded_file = st.file_uploader(
@@ -1448,8 +1561,46 @@ with input_col_main:
             type=["md", "txt", "markdown"],
             label_visibility="collapsed",
         )
+
+        # Supplementary text for uploaded documents
+        st.markdown('''
+        <div style="
+            font-family: 'Lora', Georgia, serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #f8f9fc;
+            margin-top: 1.2rem;
+            margin-bottom: 0.2rem;
+        ">Ergänzende Hinweise</div>
+        <div style="
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.85rem;
+            color: #8892a6;
+            margin-bottom: 0.8rem;
+            line-height: 1.5;
+        ">Optional: Geben Sie den KI-Systemen zusätzlichen Kontext,
+        Schwerpunkte oder spezifische Fragen mit.</div>
+        ''', unsafe_allow_html=True)
+
+        supplement_text = st.text_area(
+            "Ergänzende Hinweise",
+            height=120,
+            placeholder="z.B.: Fokus auf den deutschen Markt. Bitte besonders die "
+                        "Wettbewerbsanalyse und die Preisgestaltung kritisch prüfen...",
+            label_visibility="collapsed",
+        )
+
         if uploaded_file is not None:
-            input_text = uploaded_file.read().decode("utf-8")
+            file_content = uploaded_file.read().decode("utf-8")
+            # Combine document with supplementary instructions
+            if supplement_text.strip():
+                input_text = (
+                    f"{file_content}\n\n"
+                    f"---\n\n"
+                    f"**Ergänzende Hinweise des Autors:**\n{supplement_text.strip()}"
+                )
+            else:
+                input_text = file_content
             st.markdown(f'''
             <div style="
                 display: flex;
@@ -1460,23 +1611,23 @@ with input_col_main:
                 border: 1px solid rgba(34, 197, 94, 0.15);
                 border-radius: 10px;
                 margin-bottom: 0.8rem;
-                font-family: 'Inter', sans-serif;
+                font-family: 'Source Sans 3', sans-serif;
                 font-size: 0.85rem;
                 color: #86efac;
             ">
                 <span style="font-size: 1rem;">&#10003;</span>
-                <span>{uploaded_file.name} erfolgreich geladen ({len(input_text):,} Zeichen)</span>
+                <span>{uploaded_file.name} erfolgreich geladen ({len(file_content):,} Zeichen)</span>
             </div>
             ''', unsafe_allow_html=True)
             with st.expander("Dokumentvorschau", expanded=False):
-                st.markdown(input_text)
+                st.markdown(file_content)
 
     # Empty state hint (when no input)
     if input_text is None:
         st.markdown('''
         <div class="empty-state">
             <div class="icon">&#9997;</div>
-            <h3>Bereit fuer Ihre Strategie</h3>
+            <h3>Bereit für Ihre Strategie</h3>
             <p>Geben Sie oben eine Idee ein oder laden Sie ein Dokument hoch,
             um die KI-Debatte zu starten.</p>
         </div>
@@ -1522,13 +1673,13 @@ if start_debate and input_text is not None:
             margin-bottom: 0.5rem;
         ">
             <div style="
-                font-family: 'Cormorant Garamond', Georgia, serif;
+                font-family: 'Lora', Georgia, serif;
                 font-size: 1.5rem;
                 font-weight: 700;
                 color: #f8f9fc;
-            ">Debatte laeuft</div>
+            ">Debatte läuft</div>
             <div style="
-                font-family: 'Inter', sans-serif;
+                font-family: 'Source Sans 3', sans-serif;
                 font-size: 0.85rem;
                 color: #8892a6;
             ">Die KI-Systeme analysieren und verbessern Ihr Dokument</div>
@@ -1547,7 +1698,7 @@ if start_debate and input_text is not None:
         # Critique accordion section
         st.markdown('''
         <div style="
-            font-family: 'Inter', sans-serif;
+            font-family: 'Source Sans 3', sans-serif;
             font-size: 0.78rem;
             color: #8892a6;
             text-transform: uppercase;
@@ -1638,7 +1789,7 @@ if start_debate and input_text is not None:
                 <div class="status-icon synthesis">K</div>
                 <div class="status-text">
                     <div class="name">Konvergenz-Check</div>
-                    <div class="detail">Pruefe ob weitere Runden Mehrwert bringen...</div>
+                    <div class="detail">Prüfe ob weitere Runden Mehrwert bringen...</div>
                 </div>
                 <div class="status-spinner"></div>
             </div>
@@ -1732,7 +1883,7 @@ if start_debate and input_text is not None:
             )
             banner_subtitle = f'''
                 <div style="
-                    font-family: 'Inter', sans-serif;
+                    font-family: 'Source Sans 3', sans-serif;
                     font-size: 0.82rem;
                     color: #d4a843;
                     margin-top: 0.5rem;
@@ -1745,7 +1896,7 @@ if start_debate and input_text is not None:
             '''
         else:
             banner_detail = (
-                f"{rounds_completed} Runden &middot; {rounds_completed * 3} Kritik-Durchlaeufe &middot; "
+                f"{rounds_completed} Runden &middot; {rounds_completed * 3} Kritik-Durchläufe &middot; "
                 f"3 KI-Perspektiven &middot; 1 synthetisiertes Ergebnis"
             )
             banner_subtitle = ""
@@ -1808,14 +1959,14 @@ if start_debate and input_text is not None:
         # Full critique log
         st.markdown('''
         <div style="
-            font-family: 'Inter', sans-serif;
+            font-family: 'Source Sans 3', sans-serif;
             font-size: 0.78rem;
             color: #8892a6;
             text-transform: uppercase;
             letter-spacing: 0.06em;
             font-weight: 600;
             margin: 2rem 0 0.5rem 0;
-        ">Vollstaendiger Debatten-Verlauf</div>
+        ">Vollständiger Debatten-Verlauf</div>
         ''', unsafe_allow_html=True)
 
         with st.expander("Gesamten Kritik-Verlauf anzeigen", expanded=False):
