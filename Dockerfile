@@ -6,6 +6,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY strategy_debate.py app.py ./
+COPY webauthn_component/ ./webauthn_component/
+
+RUN mkdir -p /app/data
 
 EXPOSE 8501
 

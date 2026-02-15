@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        font-family: 'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif;
+        background: transparent;
+    }
+
+    .wa-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.6rem;
+        width: 100%;
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, #c9952d 0%, #d4a843 100%);
+        color: #0a0f1e;
+        font-family: inherit;
+        font-weight: 600;
+        font-size: 0.95rem;
+        letter-spacing: 0.03em;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(201, 149, 45, 0.2);
+        transition: all 0.3s ease;
+    }
+    .wa-btn:hover {
+        background: linear-gradient(135deg, #d4a843 0%, #dfbc5e 100%);
+        box-shadow: 0 6px 25px rgba(201, 149, 45, 0.35);
+        transform: translateY(-1px);
+    }
+    .wa-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none !important;
+        box-shadow: 0 4px 15px rgba(201, 149, 45, 0.2) !important;
+    }
+    .wa-btn .icon { font-size: 1.2rem; }
+
+    .wa-btn-secondary {
+        background: transparent;
+        border: 1px solid #243352;
+        color: #b0c1d8;
+        box-shadow: none;
+    }
+    .wa-btn-secondary:hover {
+        background: rgba(201, 149, 45, 0.08);
+        border-color: #c9952d;
+        color: #f8f9fc;
+        box-shadow: none;
+    }
+
+    .status-msg {
+        text-align: center;
+        font-size: 0.85rem;
+        margin-top: 0.5rem;
+        padding: 0.4rem 0.8rem;
+        border-radius: 8px;
+        display: none;
+    }
+    .status-msg.error {
+        display: block;
+        color: #f87171;
+        background: rgba(248, 113, 113, 0.06);
+        border: 1px solid rgba(248, 113, 113, 0.15);
+    }
+    .status-msg.success {
+        display: block;
+        color: #4ade80;
+        background: rgba(74, 222, 128, 0.06);
+        border: 1px solid rgba(74, 222, 128, 0.15);
+    }
+    .status-msg.info {
+        display: block;
+        color: #7b92b2;
+        background: rgba(123, 146, 178, 0.06);
+    }
+</style>
+</head>
+<body>
+<div id="container">
+    <button id="wa-btn" class="wa-btn" onclick="handleClick()">
+        <span class="icon" id="btn-icon"></span>
+        <span id="btn-text">Laden...</span>
+    </button>
+    <div id="status" class="status-msg"></div>
+</div>
+
+<script>
+// ──────────────────────────────────────────────────────
+// Streamlit component communication protocol
+// ──────────────────────────────────────────────────────
+function sendMsg(type, data) {
+    window.parent.postMessage(
+        Object.assign({ type: type, isStreamlitMessage: true }, data || {}),
+        "*"
+    );
+}
+function setFrameHeight() {
+    sendMsg("streamlit:setFrameHeight", { height: document.body.scrollHeight + 4 });
+}
+function setComponentValue(value) {
+    sendMsg("streamlit:setComponentValue", { value: value });
+}
+
+let currentMode = null;
+let currentOptions = null;
+
+window.addEventListener("message", function(event) {
+    if (event.data.type === "streamlit:render") {
+        onRender(event.data);
+    }
+});
+
+function onRender(event) {
+    const args = event.args;
+    currentMode = args.mode;
+    currentOptions = args.options ? JSON.parse(args.options) : null;
+
+    const btn = document.getElementById("wa-btn");
+    const btnText = document.getElementById("btn-text");
+    const btnIcon = document.getElementById("btn-icon");
+    const statusEl = document.getElementById("status");
+
+    // Reset status
+    statusEl.className = "status-msg";
+    statusEl.textContent = "";
+    btn.disabled = false;
+
+    if (currentMode === "register") {
+        btnIcon.textContent = "\uD83D\uDD11";
+        btnText.textContent = "Face ID / Passkey registrieren";
+        btn.className = "wa-btn wa-btn-secondary";
+    } else {
+        btnIcon.textContent = "\uD83D\uDD13";
+        btnText.textContent = "Mit Face ID anmelden";
+        btn.className = "wa-btn";
+    }
+
+    if (!window.PublicKeyCredential) {
+        showStatus("WebAuthn wird von diesem Browser nicht unterstützt.", "error");
+        btn.disabled = true;
+    }
+
+    setFrameHeight();
+}
+
+function showStatus(msg, type) {
+    var el = document.getElementById("status");
+    el.textContent = msg;
+    el.className = "status-msg " + type;
+    setFrameHeight();
+}
+
+// ──────────────────────────────────────────────────────
+// Base64URL ↔ ArrayBuffer helpers
+// ──────────────────────────────────────────────────────
+function b64urlToBuffer(b64url) {
+    var b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+    var pad = b64.length % 4;
+    if (pad) b64 += "=".repeat(4 - pad);
+    var bin = atob(b64);
+    var arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr.buffer;
+}
+
+function bufferToB64url(buf) {
+    var bytes = new Uint8Array(buf);
+    var bin = "";
+    for (var i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+// ──────────────────────────────────────────────────────
+// WebAuthn Registration
+// ──────────────────────────────────────────────────────
+async function doRegister() {
+    showStatus("Bitte Face ID / Touch ID bestätigen\u2026", "info");
+
+    var opts = currentOptions;
+    var publicKey = {
+        challenge: b64urlToBuffer(opts.challenge),
+        rp: { id: opts.rp.id, name: opts.rp.name },
+        user: {
+            id: b64urlToBuffer(opts.user.id),
+            name: opts.user.name,
+            displayName: opts.user.displayName
+        },
+        pubKeyCredParams: opts.pubKeyCredParams,
+        timeout: opts.timeout || 60000,
+        attestation: opts.attestation || "none"
+    };
+
+    if (opts.authenticatorSelection) {
+        publicKey.authenticatorSelection = opts.authenticatorSelection;
+    }
+    if (opts.excludeCredentials) {
+        publicKey.excludeCredentials = opts.excludeCredentials.map(function(c) {
+            return { id: b64urlToBuffer(c.id), type: c.type, transports: c.transports };
+        });
+    }
+
+    var cred = await navigator.credentials.create({ publicKey: publicKey });
+
+    var result = {
+        id: cred.id,
+        rawId: bufferToB64url(cred.rawId),
+        type: cred.type,
+        response: {
+            attestationObject: bufferToB64url(cred.response.attestationObject),
+            clientDataJSON: bufferToB64url(cred.response.clientDataJSON)
+        }
+    };
+    if (cred.response.getTransports) {
+        result.response.transports = cred.response.getTransports();
+    }
+
+    showStatus("Registrierung erfolgreich!", "success");
+    setComponentValue({ action: "register_complete", credential: result });
+}
+
+// ──────────────────────────────────────────────────────
+// WebAuthn Authentication
+// ──────────────────────────────────────────────────────
+async function doAuthenticate() {
+    showStatus("Bitte Face ID / Touch ID bestätigen\u2026", "info");
+
+    var opts = currentOptions;
+    var publicKey = {
+        challenge: b64urlToBuffer(opts.challenge),
+        timeout: opts.timeout || 60000,
+        rpId: opts.rpId,
+        userVerification: opts.userVerification || "required"
+    };
+
+    if (opts.allowCredentials && opts.allowCredentials.length > 0) {
+        publicKey.allowCredentials = opts.allowCredentials.map(function(c) {
+            return { id: b64urlToBuffer(c.id), type: c.type, transports: c.transports };
+        });
+    }
+
+    var assertion = await navigator.credentials.get({ publicKey: publicKey });
+
+    var result = {
+        id: assertion.id,
+        rawId: bufferToB64url(assertion.rawId),
+        type: assertion.type,
+        response: {
+            authenticatorData: bufferToB64url(assertion.response.authenticatorData),
+            clientDataJSON: bufferToB64url(assertion.response.clientDataJSON),
+            signature: bufferToB64url(assertion.response.signature)
+        }
+    };
+    if (assertion.response.userHandle) {
+        result.response.userHandle = bufferToB64url(assertion.response.userHandle);
+    }
+
+    showStatus("Authentifizierung erfolgreich!", "success");
+    setComponentValue({ action: "auth_complete", assertion: result });
+}
+
+// ──────────────────────────────────────────────────────
+// Click handler
+// ──────────────────────────────────────────────────────
+async function handleClick() {
+    var btn = document.getElementById("wa-btn");
+    btn.disabled = true;
+    try {
+        if (currentMode === "register") {
+            await doRegister();
+        } else {
+            await doAuthenticate();
+        }
+    } catch (err) {
+        if (err.name === "NotAllowedError") {
+            showStatus("Abgebrochen oder nicht erlaubt.", "error");
+        } else {
+            showStatus("Fehler: " + err.message, "error");
+        }
+        btn.disabled = false;
+    }
+}
+
+// Init
+sendMsg("streamlit:componentReady", { apiVersion: 1 });
+</script>
+</body>
+</html>

@@ -6,16 +6,28 @@ Production-ready UI/UX mit Premium Think-Tank Aesthetic.
 """
 
 import hashlib
-import io
+import json
 import os
 import uuid
 from pathlib import Path
 
-import pyotp
-import qrcode
-import qrcode.constants
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
+from webauthn import (
+    generate_authentication_options,
+    generate_registration_options,
+    options_to_json,
+    verify_authentication_response,
+    verify_registration_response,
+)
+from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
+from webauthn.helpers.structs import (
+    AuthenticatorSelectionCriteria,
+    PublicKeyCredentialDescriptor,
+    ResidentKeyRequirement,
+    UserVerificationRequirement,
+)
 
 load_dotenv()
 
@@ -42,19 +54,38 @@ st.set_page_config(
 _DEFAULT_HASH = hashlib.sha256("maure2024".encode()).hexdigest()
 PASSKEY_HASH = os.environ.get("MSC_PASSKEY_HASH", _DEFAULT_HASH)
 
-# TOTP secret for 2FA. Set MSC_TOTP_SECRET env var.
-# If not set, a new secret is generated at startup and printed to logs.
-TOTP_SECRET = os.environ.get("MSC_TOTP_SECRET", "")
-if not TOTP_SECRET:
-    TOTP_SECRET = pyotp.random_base32()
-    print(f"[MSC] Kein MSC_TOTP_SECRET gesetzt. Generiertes Secret: {TOTP_SECRET}")
-    print(f"[MSC] Bitte in .env eintragen: MSC_TOTP_SECRET={TOTP_SECRET}")
+# WebAuthn config
+RP_ID = os.environ.get("MSC_RP_ID", "msc.demo-itw.de")
+RP_NAME = "Maure's Strategie Club"
+ORIGIN = os.environ.get("MSC_ORIGIN", f"https://{RP_ID}")
+CRED_FILE = Path(os.environ.get("MSC_CRED_FILE", "/app/data/webauthn_creds.json"))
+_USER_ID = b"maure-msc-user"
 
-TOTP = pyotp.TOTP(TOTP_SECRET)
-TOTP_URI = TOTP.provisioning_uri(
-    name="Strategie Club",
-    issuer_name="Maure's MSC",
+# Declare WebAuthn Streamlit component
+_webauthn_component = components.declare_component(
+    "webauthn",
+    path=str(Path(__file__).parent / "webauthn_component"),
 )
+
+
+def _load_credentials() -> list:
+    """Load stored WebAuthn credentials from JSON file."""
+    if CRED_FILE.exists():
+        try:
+            return json.loads(CRED_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            return []
+    return []
+
+
+def _save_credentials(creds: list):
+    """Save WebAuthn credentials to JSON file."""
+    CRED_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CRED_FILE.write_text(json.dumps(creds, indent=2))
+
+
+def _has_credentials() -> bool:
+    return len(_load_credentials()) > 0
 
 
 def _check_auth():
@@ -62,24 +93,81 @@ def _check_auth():
     return st.session_state.get("authenticated", False)
 
 
-def _build_totp_qr() -> bytes:
-    """Generate a QR code image (PNG bytes) for the TOTP provisioning URI."""
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=8,
-        border=2,
+def _get_auth_options_json() -> tuple:
+    """Generate WebAuthn authentication options; cache challenge in session."""
+    if "wa_auth_challenge" not in st.session_state:
+        creds = _load_credentials()
+        allow_creds = [
+            PublicKeyCredentialDescriptor(
+                id=base64url_to_bytes(c["credential_id"]),
+                transports=c.get("transports", []),
+            )
+            for c in creds
+        ]
+        opts = generate_authentication_options(
+            rp_id=RP_ID,
+            allow_credentials=allow_creds,
+            user_verification=UserVerificationRequirement.PREFERRED,
+        )
+        st.session_state["wa_auth_challenge"] = opts.challenge
+        st.session_state["wa_auth_options_json"] = options_to_json(opts)
+    return (
+        st.session_state["wa_auth_challenge"],
+        st.session_state["wa_auth_options_json"],
     )
-    qr.add_data(TOTP_URI)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="#c9952d", back_color="#111827")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+
+
+def _verify_webauthn_auth(assertion_data: dict) -> bool:
+    """Verify a WebAuthn authentication assertion. Returns True on success."""
+    creds = _load_credentials()
+    assertion = assertion_data.get("assertion", {})
+    cred_id = assertion.get("id", "")
+
+    stored = next((c for c in creds if c["credential_id"] == cred_id), None)
+    if not stored:
+        return False
+
+    challenge = st.session_state.get("wa_auth_challenge")
+    if not challenge:
+        return False
+
+    try:
+        verification = verify_authentication_response(
+            credential={
+                "id": assertion["id"],
+                "rawId": assertion["rawId"],
+                "type": assertion.get("type", "public-key"),
+                "response": {
+                    "authenticatorData": assertion["response"]["authenticatorData"],
+                    "clientDataJSON": assertion["response"]["clientDataJSON"],
+                    "signature": assertion["response"]["signature"],
+                    "userHandle": assertion["response"].get("userHandle", ""),
+                },
+                "authenticatorAttachment": "platform",
+                "clientExtensionResults": {},
+            },
+            expected_challenge=challenge,
+            expected_rp_id=RP_ID,
+            expected_origin=ORIGIN,
+            credential_public_key=base64url_to_bytes(stored["public_key"]),
+            credential_current_sign_count=stored.get("sign_count", 0),
+        )
+        # Update sign count
+        stored["sign_count"] = verification.new_sign_count
+        _save_credentials(creds)
+        # Clear used challenge
+        del st.session_state["wa_auth_challenge"]
+        del st.session_state["wa_auth_options_json"]
+        return True
+    except Exception:
+        # Clear challenge so a fresh one is generated on retry
+        st.session_state.pop("wa_auth_challenge", None)
+        st.session_state.pop("wa_auth_options_json", None)
+        return False
 
 
 def _show_login():
-    """Renders a centered login screen with TOTP 2FA."""
+    """Renders a centered login screen with Face ID + passkey fallback."""
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -269,36 +357,48 @@ def _show_login():
         </div>
         ''', unsafe_allow_html=True)
 
-        # --- Step 1: QR Code for Authenticator setup ---
-        st.markdown('''
-        <div style="
-            text-align: center;
-            font-family: 'Source Sans 3', sans-serif;
-            font-size: 0.82rem;
-            color: #7b92b2;
-            margin-bottom: 0.5rem;
-        ">QR-Code mit Authenticator-App scannen<br>
-        <span style="color: #4a6085; font-size: 0.75rem;">
-            (Google Authenticator, Microsoft Authenticator, Authy o.&#8239;&auml;.)
-        </span></div>
-        ''', unsafe_allow_html=True)
+        # ── Face ID / WebAuthn login (if credentials exist) ──
+        has_creds = _has_credentials()
 
-        # QR Code (centered)
-        qr_bytes = _build_totp_qr()
-        _, qr_center, _ = st.columns([1, 1, 1])
-        with qr_center:
-            st.image(qr_bytes, width=180)
+        if has_creds:
+            _challenge, auth_opts_json = _get_auth_options_json()
 
-        # --- Step 2: Login form ---
-        st.markdown('''
-        <div class="login-divider">
-            <div class="line"></div>
-            <div class="text">Anmelden</div>
-            <div class="line"></div>
-        </div>
-        ''', unsafe_allow_html=True)
+            wa_result = _webauthn_component(
+                mode="authenticate",
+                options=auth_opts_json,
+                key="wa_login",
+                height=80,
+            )
 
-        # Passkey
+            if wa_result and isinstance(wa_result, dict):
+                if wa_result.get("action") == "auth_complete":
+                    if _verify_webauthn_auth(wa_result):
+                        st.session_state["authenticated"] = True
+                        st.rerun()
+                    else:
+                        st.markdown(
+                            '<div class="login-error">Face ID Verifizierung fehlgeschlagen.</div>',
+                            unsafe_allow_html=True,
+                        )
+
+            # Divider
+            st.markdown('''
+            <div class="login-divider">
+                <div class="line"></div>
+                <div class="text">oder mit Passkey</div>
+                <div class="line"></div>
+            </div>
+            ''', unsafe_allow_html=True)
+        else:
+            st.markdown('''
+            <div class="login-divider">
+                <div class="line"></div>
+                <div class="text">Anmelden</div>
+                <div class="line"></div>
+            </div>
+            ''', unsafe_allow_html=True)
+
+        # ── Passkey (password) fallback ──
         st.markdown('''
         <div style="
             font-family: 'Source Sans 3', sans-serif;
@@ -318,51 +418,17 @@ def _show_login():
             label_visibility="collapsed",
         )
 
-        # TOTP code
-        st.markdown('''
-        <div style="
-            font-family: 'Source Sans 3', sans-serif;
-            font-size: 0.78rem;
-            font-weight: 600;
-            color: #b0c1d8;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            margin-top: 0.6rem;
-            margin-bottom: 0.3rem;
-        ">2FA-Code</div>
-        ''', unsafe_allow_html=True)
-
-        totp_code = st.text_input(
-            "2FA-Code",
-            placeholder="6-stelligen Code eingeben...",
-            max_chars=6,
-            label_visibility="collapsed",
-        )
-
         st.markdown('<div style="height: 0.4rem;"></div>', unsafe_allow_html=True)
 
         login_clicked = st.button("Anmelden", type="primary", use_container_width=True)
 
         if login_clicked:
-            passkey_ok = hashlib.sha256(passkey.encode()).hexdigest() == PASSKEY_HASH
-            totp_ok = TOTP.verify(totp_code, valid_window=1)
-
-            if passkey_ok and totp_ok:
+            if hashlib.sha256(passkey.encode()).hexdigest() == PASSKEY_HASH:
                 st.session_state["authenticated"] = True
                 st.rerun()
-            elif not passkey_ok and not totp_ok:
-                st.markdown(
-                    '<div class="login-error">Passkey und 2FA-Code sind falsch.</div>',
-                    unsafe_allow_html=True,
-                )
-            elif not passkey_ok:
-                st.markdown(
-                    '<div class="login-error">Falscher Passkey.</div>',
-                    unsafe_allow_html=True,
-                )
             else:
                 st.markdown(
-                    '<div class="login-error">Falscher 2FA-Code. Bitte erneut versuchen.</div>',
+                    '<div class="login-error">Falscher Passkey.</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -1715,6 +1781,110 @@ with st.sidebar:
     if st.button("Abmelden", use_container_width=True):
         st.session_state["authenticated"] = False
         st.rerun()
+
+    # ── Face ID Registration ──
+    st.markdown('''
+    <div style="
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid #1e293b;
+    ">
+        <div style="
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.78rem;
+            color: #8892a6;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-weight: 600;
+            margin-bottom: 0.8rem;
+        ">Face ID / Biometrie</div>
+    </div>
+    ''', unsafe_allow_html=True)
+
+    if _has_credentials():
+        st.markdown('''
+        <div style="
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.82rem;
+            color: #4ade80;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        ">&#x2713; Face ID registriert</div>
+        ''', unsafe_allow_html=True)
+        if st.button("Face ID entfernen", use_container_width=True):
+            _save_credentials([])
+            st.session_state.pop("wa_auth_challenge", None)
+            st.session_state.pop("wa_auth_options_json", None)
+            st.rerun()
+    else:
+        # Generate registration options
+        if "wa_reg_challenge" not in st.session_state:
+            reg_opts = generate_registration_options(
+                rp_id=RP_ID,
+                rp_name=RP_NAME,
+                user_id=_USER_ID,
+                user_name="maure",
+                user_display_name="Maure",
+                authenticator_selection=AuthenticatorSelectionCriteria(
+                    user_verification=UserVerificationRequirement.PREFERRED,
+                    resident_key=ResidentKeyRequirement.PREFERRED,
+                ),
+            )
+            st.session_state["wa_reg_challenge"] = reg_opts.challenge
+            st.session_state["wa_reg_options_json"] = options_to_json(reg_opts)
+
+        reg_result = _webauthn_component(
+            mode="register",
+            options=st.session_state["wa_reg_options_json"],
+            key="wa_register",
+            height=80,
+        )
+
+        if reg_result and isinstance(reg_result, dict):
+            if reg_result.get("action") == "register_complete":
+                cred_data = reg_result.get("credential", {})
+                challenge = st.session_state.get("wa_reg_challenge")
+                if challenge and cred_data:
+                    try:
+                        verification = verify_registration_response(
+                            credential={
+                                "id": cred_data["id"],
+                                "rawId": cred_data["rawId"],
+                                "type": cred_data.get("type", "public-key"),
+                                "response": {
+                                    "attestationObject": cred_data["response"]["attestationObject"],
+                                    "clientDataJSON": cred_data["response"]["clientDataJSON"],
+                                },
+                                "authenticatorAttachment": "platform",
+                                "clientExtensionResults": {},
+                            },
+                            expected_challenge=challenge,
+                            expected_rp_id=RP_ID,
+                            expected_origin=ORIGIN,
+                        )
+                        new_cred = {
+                            "credential_id": cred_data["id"],
+                            "public_key": bytes_to_base64url(
+                                verification.credential_public_key
+                            ),
+                            "sign_count": verification.sign_count,
+                            "transports": cred_data.get("response", {}).get(
+                                "transports", ["internal"]
+                            ),
+                        }
+                        creds = _load_credentials()
+                        creds.append(new_cred)
+                        _save_credentials(creds)
+                        # Clear registration state
+                        del st.session_state["wa_reg_challenge"]
+                        del st.session_state["wa_reg_options_json"]
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Registrierung fehlgeschlagen: {exc}")
+                        st.session_state.pop("wa_reg_challenge", None)
+                        st.session_state.pop("wa_reg_options_json", None)
 
     # Footer
     st.markdown('''
