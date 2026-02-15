@@ -5,7 +5,6 @@ Streamlit-App für die Multi-KI-Dokumentenoptimierung.
 Production-ready UI/UX mit Premium Think-Tank Aesthetic.
 """
 
-import base64
 import hashlib
 import io
 import os
@@ -44,27 +43,9 @@ def _check_auth():
     return st.session_state.get("authenticated", False)
 
 
-def _generate_qr_code(url: str) -> str:
-    """Generate a QR code as base64-encoded PNG."""
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=8,
-        border=2,
-    )
-    qr.add_data(url)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="#c9952d", back_color="#111827")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode()
-
-
 def _show_login():
     """Renders a centered login screen with QR code."""
-    # Build the app URL for the QR code
     app_url = os.environ.get("MSC_APP_URL", "https://msc.demo-itw.de")
-    qr_b64 = _generate_qr_code(app_url)
 
     st.markdown("""
     <style>
@@ -80,18 +61,6 @@ def _show_login():
         /* Hide sidebar on login */
         [data-testid="stSidebarCollapsedControl"] { display: none !important; }
         section[data-testid="stSidebar"] { display: none !important; }
-
-        /* ── Login Card ── */
-        .login-card {
-            background: #111827;
-            border: 1px solid #1e293b;
-            border-radius: 20px;
-            padding: 2.5rem 2.5rem 2rem 2.5rem;
-            max-width: 420px;
-            margin: 0 auto;
-            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4),
-                        0 0 80px rgba(201, 149, 45, 0.03);
-        }
 
         /* Branding */
         .login-branding {
@@ -149,45 +118,6 @@ def _show_login():
             font-size: 0.85rem;
             color: #7b92b2;
             margin-top: 0.3rem;
-        }
-
-        /* QR section */
-        .qr-section {
-            text-align: center;
-            margin: 1.5rem 0;
-        }
-
-        .qr-wrapper {
-            display: inline-block;
-            background: #111827;
-            border: 2px solid #1e293b;
-            border-radius: 16px;
-            padding: 12px;
-            position: relative;
-            transition: border-color 0.3s ease;
-        }
-
-        .qr-wrapper:hover {
-            border-color: #c9952d40;
-        }
-
-        .qr-wrapper img {
-            display: block;
-            border-radius: 8px;
-            width: 180px;
-            height: 180px;
-        }
-
-        .qr-label {
-            font-family: 'Source Sans 3', sans-serif;
-            font-size: 0.78rem;
-            color: #4a6085;
-            margin-top: 0.8rem;
-            letter-spacing: 0.03em;
-        }
-
-        .qr-label strong {
-            color: #7b92b2;
         }
 
         /* Divider */
@@ -296,52 +226,68 @@ def _show_login():
     </style>
     """, unsafe_allow_html=True)
 
+    # Generate QR code image bytes for st.image()
+    qr_buf = io.BytesIO()
+    qr_obj = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=8,
+        border=2,
+    )
+    qr_obj.add_data(app_url)
+    qr_obj.make(fit=True)
+    qr_img = qr_obj.make_image(fill_color="#c9952d", back_color="#111827")
+    qr_img.save(qr_buf, format="PNG")
+    qr_bytes = qr_buf.getvalue()
+
     # Centered layout
     _, col, _ = st.columns([1.2, 1.6, 1.2])
 
     with col:
-        # Vertical spacer
         st.markdown('<div style="height: 8vh;"></div>', unsafe_allow_html=True)
 
-        # Login card (HTML part)
-        st.markdown(f'''
-        <div class="login-card">
-            <!-- Branding -->
-            <div class="login-branding">
-                <div class="login-ornament">
-                    <div class="line"></div>
-                    <div class="diamond"></div>
-                    <div class="line"></div>
-                </div>
-                <div class="login-title">
-                    Maure's <span class="accent">Strategie Club</span>
-                </div>
-                <div class="login-tagline">Multi-AI Strategy Debate Platform</div>
-            </div>
-
-            <!-- QR Code -->
-            <div class="qr-section">
-                <div class="qr-wrapper">
-                    <img src="data:image/png;base64,{qr_b64}" alt="QR Code" />
-                </div>
-                <div class="qr-label">
-                    <strong>QR-Code scannen</strong> um die App auf dem Handy zu öffnen
-                </div>
-            </div>
-
-            <!-- Divider -->
-            <div class="login-divider">
+        # Branding
+        st.markdown('''
+        <div class="login-branding">
+            <div class="login-ornament">
                 <div class="line"></div>
-                <div class="text">Passkey eingeben</div>
+                <div class="diamond"></div>
                 <div class="line"></div>
             </div>
-
-            <!-- Label -->
-            <div class="login-field-label">Passkey</div>
+            <div class="login-title">
+                Maure's <span class="accent">Strategie Club</span>
+            </div>
+            <div class="login-tagline">Multi-AI Strategy Debate Platform</div>
         </div>
         ''', unsafe_allow_html=True)
 
-        # Streamlit widgets (rendered right after the card HTML)
+        # QR Code via st.image (centered)
+        qr_left, qr_center, qr_right = st.columns([1, 1, 1])
+        with qr_center:
+            st.image(qr_bytes, width=180)
+
+        st.markdown('''
+        <div style="
+            text-align: center;
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.78rem;
+            color: #4a6085;
+            margin-top: -0.5rem;
+            margin-bottom: 1rem;
+            letter-spacing: 0.03em;
+        "><strong style="color: #7b92b2;">QR-Code scannen</strong> um die App auf dem Handy zu öffnen</div>
+        ''', unsafe_allow_html=True)
+
+        # Divider
+        st.markdown('''
+        <div class="login-divider">
+            <div class="line"></div>
+            <div class="text">Passkey eingeben</div>
+            <div class="line"></div>
+        </div>
+        ''', unsafe_allow_html=True)
+
+        # Passkey input
         passkey = st.text_input(
             "Passkey",
             type="password",
