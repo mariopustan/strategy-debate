@@ -11,6 +11,7 @@ import os
 import uuid
 from pathlib import Path
 
+import pyotp
 import qrcode
 import qrcode.constants
 import streamlit as st
@@ -33,9 +34,27 @@ st.set_page_config(
 # Authentication
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Auth config
+# ---------------------------------------------------------------------------
+
 # Passkey hash (SHA-256). Set MSC_PASSKEY_HASH env var or default to hash of "maure2024"
 _DEFAULT_HASH = hashlib.sha256("maure2024".encode()).hexdigest()
 PASSKEY_HASH = os.environ.get("MSC_PASSKEY_HASH", _DEFAULT_HASH)
+
+# TOTP secret for 2FA. Set MSC_TOTP_SECRET env var.
+# If not set, a new secret is generated at startup and printed to logs.
+TOTP_SECRET = os.environ.get("MSC_TOTP_SECRET", "")
+if not TOTP_SECRET:
+    TOTP_SECRET = pyotp.random_base32()
+    print(f"[MSC] Kein MSC_TOTP_SECRET gesetzt. Generiertes Secret: {TOTP_SECRET}")
+    print(f"[MSC] Bitte in .env eintragen: MSC_TOTP_SECRET={TOTP_SECRET}")
+
+TOTP = pyotp.TOTP(TOTP_SECRET)
+TOTP_URI = TOTP.provisioning_uri(
+    name="Strategie Club",
+    issuer_name="Maure's MSC",
+)
 
 
 def _check_auth():
@@ -43,10 +62,24 @@ def _check_auth():
     return st.session_state.get("authenticated", False)
 
 
-def _show_login():
-    """Renders a centered login screen with QR code."""
-    app_url = os.environ.get("MSC_APP_URL", "https://msc.demo-itw.de")
+def _build_totp_qr() -> bytes:
+    """Generate a QR code image (PNG bytes) for the TOTP provisioning URI."""
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=8,
+        border=2,
+    )
+    qr.add_data(TOTP_URI)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#c9952d", back_color="#111827")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
+
+def _show_login():
+    """Renders a centered login screen with TOTP 2FA."""
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -65,7 +98,7 @@ def _show_login():
         /* Branding */
         .login-branding {
             text-align: center;
-            margin-bottom: 1.8rem;
+            margin-bottom: 1.5rem;
         }
 
         .login-ornament {
@@ -125,7 +158,7 @@ def _show_login():
             display: flex;
             align-items: center;
             gap: 0.8rem;
-            margin: 1.5rem 0;
+            margin: 1.2rem 0;
         }
 
         .login-divider .line {
@@ -141,17 +174,6 @@ def _show_login():
             text-transform: uppercase;
             letter-spacing: 0.08em;
             white-space: nowrap;
-        }
-
-        /* Field label */
-        .login-field-label {
-            font-family: 'Source Sans 3', sans-serif;
-            font-size: 0.78rem;
-            font-weight: 600;
-            color: #b0c1d8;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            margin-bottom: 0.4rem;
         }
 
         /* Error */
@@ -170,8 +192,8 @@ def _show_login():
         /* Footer */
         .login-footer {
             text-align: center;
-            margin-top: 1.8rem;
-            padding-top: 1.2rem;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
             border-top: 1px solid #1e293b;
         }
 
@@ -226,25 +248,11 @@ def _show_login():
     </style>
     """, unsafe_allow_html=True)
 
-    # Generate QR code image bytes for st.image()
-    qr_buf = io.BytesIO()
-    qr_obj = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=8,
-        border=2,
-    )
-    qr_obj.add_data(app_url)
-    qr_obj.make(fit=True)
-    qr_img = qr_obj.make_image(fill_color="#c9952d", back_color="#111827")
-    qr_img.save(qr_buf, format="PNG")
-    qr_bytes = qr_buf.getvalue()
-
     # Centered layout
     _, col, _ = st.columns([1.2, 1.6, 1.2])
 
     with col:
-        st.markdown('<div style="height: 8vh;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="height: 5vh;"></div>', unsafe_allow_html=True)
 
         # Branding
         st.markdown('''
@@ -261,33 +269,48 @@ def _show_login():
         </div>
         ''', unsafe_allow_html=True)
 
-        # QR Code via st.image (centered)
-        qr_left, qr_center, qr_right = st.columns([1, 1, 1])
-        with qr_center:
-            st.image(qr_bytes, width=180)
-
+        # --- Step 1: QR Code for Authenticator setup ---
         st.markdown('''
         <div style="
             text-align: center;
             font-family: 'Source Sans 3', sans-serif;
-            font-size: 0.78rem;
-            color: #4a6085;
-            margin-top: -0.5rem;
-            margin-bottom: 1rem;
-            letter-spacing: 0.03em;
-        "><strong style="color: #7b92b2;">QR-Code scannen</strong> um die App auf dem Handy zu öffnen</div>
+            font-size: 0.82rem;
+            color: #7b92b2;
+            margin-bottom: 0.5rem;
+        ">QR-Code mit Authenticator-App scannen<br>
+        <span style="color: #4a6085; font-size: 0.75rem;">
+            (Google Authenticator, Microsoft Authenticator, Authy o.&#8239;&auml;.)
+        </span></div>
         ''', unsafe_allow_html=True)
 
-        # Divider
+        # QR Code (centered)
+        qr_bytes = _build_totp_qr()
+        _, qr_center, _ = st.columns([1, 1, 1])
+        with qr_center:
+            st.image(qr_bytes, width=180)
+
+        # --- Step 2: Login form ---
         st.markdown('''
         <div class="login-divider">
             <div class="line"></div>
-            <div class="text">Passkey eingeben</div>
+            <div class="text">Anmelden</div>
             <div class="line"></div>
         </div>
         ''', unsafe_allow_html=True)
 
-        # Passkey input
+        # Passkey
+        st.markdown('''
+        <div style="
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #b0c1d8;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin-bottom: 0.3rem;
+        ">Passkey</div>
+        ''', unsafe_allow_html=True)
+
         passkey = st.text_input(
             "Passkey",
             type="password",
@@ -295,15 +318,51 @@ def _show_login():
             label_visibility="collapsed",
         )
 
+        # TOTP code
+        st.markdown('''
+        <div style="
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #b0c1d8;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin-top: 0.6rem;
+            margin-bottom: 0.3rem;
+        ">2FA-Code</div>
+        ''', unsafe_allow_html=True)
+
+        totp_code = st.text_input(
+            "2FA-Code",
+            placeholder="6-stelligen Code eingeben...",
+            max_chars=6,
+            label_visibility="collapsed",
+        )
+
+        st.markdown('<div style="height: 0.4rem;"></div>', unsafe_allow_html=True)
+
         login_clicked = st.button("Anmelden", type="primary", use_container_width=True)
 
         if login_clicked:
-            if hashlib.sha256(passkey.encode()).hexdigest() == PASSKEY_HASH:
+            passkey_ok = hashlib.sha256(passkey.encode()).hexdigest() == PASSKEY_HASH
+            totp_ok = TOTP.verify(totp_code, valid_window=1)
+
+            if passkey_ok and totp_ok:
                 st.session_state["authenticated"] = True
                 st.rerun()
+            elif not passkey_ok and not totp_ok:
+                st.markdown(
+                    '<div class="login-error">Passkey und 2FA-Code sind falsch.</div>',
+                    unsafe_allow_html=True,
+                )
+            elif not passkey_ok:
+                st.markdown(
+                    '<div class="login-error">Falscher Passkey.</div>',
+                    unsafe_allow_html=True,
+                )
             else:
                 st.markdown(
-                    '<div class="login-error">Falscher Passkey. Bitte erneut versuchen.</div>',
+                    '<div class="login-error">Falscher 2FA-Code. Bitte erneut versuchen.</div>',
                     unsafe_allow_html=True,
                 )
 
