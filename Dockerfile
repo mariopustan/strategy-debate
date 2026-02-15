@@ -5,13 +5,13 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY strategy_debate.py app.py ./
+COPY strategy_debate.py app.py api_server.py start.sh ./
 COPY webauthn_component/ ./webauthn_component/
 
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && chmod +x start.sh
 
-EXPOSE 8501
+EXPOSE 8501 8502
 
 HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
 
-ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
+ENTRYPOINT ["./start.sh"]
