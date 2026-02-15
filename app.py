@@ -1698,13 +1698,24 @@ with st.sidebar:
         </div>
         ''', unsafe_allow_html=True)
 
+    # Logout button
+    st.markdown('''
+    <div style="
+        margin-top: 2rem;
+        padding-top: 1rem;
+        border-top: 1px solid #1e293b;
+    "></div>
+    ''', unsafe_allow_html=True)
+
+    if st.button("Abmelden", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.rerun()
+
     # Footer
     st.markdown('''
     <div style="
         text-align: center;
-        margin-top: 2rem;
-        padding-top: 1rem;
-        border-top: 1px solid #1e293b;
+        margin-top: 1rem;
     ">
         <div style="
             font-family: 'Lora', Georgia, serif;
