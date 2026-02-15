@@ -56,6 +56,29 @@ Dieser Text darf nicht inhaltlich verändert werden.
 <!-- LOCKED_END -->
 ```
 
+## Docker
+
+Image bauen und ausführen:
+
+```bash
+docker build -t strategy-debate .
+
+docker run --rm \
+  -e ANTHROPIC_API_KEY="sk-ant-..." \
+  -e OPENAI_API_KEY="sk-..." \
+  -e PERPLEXITY_API_KEY="pplx-..." \
+  -v $(pwd)/dokumente:/data \
+  strategy-debate \
+  --input /data/mein_dokument.md --rounds 4 --output /data/ergebnis.md
+```
+
+Die Keys können auch über eine `.env`-Datei übergeben werden:
+
+```bash
+docker run --rm --env-file .env -v $(pwd)/dokumente:/data \
+  strategy-debate --input /data/mein_dokument.md --rounds 4 --output /data/ergebnis.md
+```
+
 ## Ausgabe
 
 - `ergebnis.md` – Finales Dokument mit Dissens-Register
