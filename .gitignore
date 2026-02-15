@@ -1,0 +1,5 @@
+.env
+__pycache__/
+debate_output/
+*.pyc
+.DS_Store
