@@ -41,58 +41,306 @@ def _check_auth():
 
 
 def _show_login():
-    """Renders the login screen and blocks further execution until authenticated."""
+    """Renders the login screen (smart-grc.de style split layout)."""
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
         .stApp {
-            background: linear-gradient(180deg, #080c18 0%, #0a0f1e 20%, #0d1425 100%);
+            background: #0a0f1e !important;
         }
         .stApp > header { background: transparent !important; }
         #MainMenu { visibility: hidden; }
         footer { visibility: hidden; }
+
+        /* Hide sidebar toggle on login */
+        [data-testid="stSidebarCollapsedControl"] { display: none !important; }
+        section[data-testid="stSidebar"] { display: none !important; }
+
+        /* Login brand panel styles */
+        .login-brand {
+            background: linear-gradient(135deg, #0d1425 0%, #1a2744 50%, #0f1628 100%);
+            border-radius: 20px;
+            padding: 3rem 2rem;
+            position: relative;
+            overflow: hidden;
+            height: 100%;
+            min-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .login-brand::before {
+            content: '';
+            position: absolute;
+            top: -30%;
+            left: -30%;
+            width: 160%;
+            height: 160%;
+            background: radial-gradient(
+                ellipse at 40% 50%,
+                rgba(201, 149, 45, 0.06) 0%,
+                transparent 60%
+            );
+            animation: brand-glow 10s ease-in-out infinite alternate;
+            pointer-events: none;
+        }
+
+        @keyframes brand-glow {
+            0% { opacity: 0.4; transform: scale(1); }
+            100% { opacity: 1; transform: scale(1.15); }
+        }
+
+        .brand-content {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+            max-width: 400px;
+        }
+
+        .brand-ornament {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.6rem;
+            margin-bottom: 2rem;
+        }
+
+        .brand-ornament .line {
+            width: 50px;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #c9952d80, transparent);
+        }
+
+        .brand-ornament .diamond {
+            width: 8px;
+            height: 8px;
+            background: #c9952d;
+            transform: rotate(45deg);
+            box-shadow: 0 0 12px rgba(201, 149, 45, 0.3);
+        }
+
+        .brand-title {
+            font-family: 'Lora', Georgia, serif;
+            font-size: 2.4rem;
+            font-weight: 700;
+            color: #f8f9fc;
+            letter-spacing: 0.02em;
+            line-height: 1.2;
+            margin-bottom: 0.8rem;
+        }
+
+        .brand-title .accent {
+            background: linear-gradient(135deg, #c9952d 0%, #dfbc5e 50%, #c9952d 100%);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: shimmer 6s ease-in-out infinite;
+        }
+
+        @keyframes shimmer {
+            0%, 100% { background-position: 0% center; }
+            50% { background-position: 200% center; }
+        }
+
+        .brand-subtitle {
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 1rem;
+            color: #7b92b2;
+            line-height: 1.6;
+            margin-bottom: 2.5rem;
+        }
+
+        .brand-features {
+            display: flex;
+            flex-direction: column;
+            gap: 0.9rem;
+            text-align: left;
+        }
+
+        .brand-feature {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.88rem;
+            color: #b0c1d8;
+        }
+
+        .brand-feature-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .brand-feature-icon.claude {
+            background: rgba(37, 99, 235, 0.12);
+            border: 1px solid rgba(37, 99, 235, 0.25);
+            color: #93c5fd;
+        }
+        .brand-feature-icon.perplexity {
+            background: rgba(20, 184, 166, 0.12);
+            border: 1px solid rgba(20, 184, 166, 0.25);
+            color: #5eead4;
+        }
+        .brand-feature-icon.chatgpt {
+            background: rgba(34, 197, 94, 0.12);
+            border: 1px solid rgba(34, 197, 94, 0.25);
+            color: #86efac;
+        }
+
+        .brand-copyright {
+            position: absolute;
+            bottom: 1.5rem;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.72rem;
+            color: #2e4066;
+            letter-spacing: 0.04em;
+            z-index: 2;
+        }
+
+        /* Form panel styles */
+        .login-form-card {
+            padding: 2.5rem 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            height: 100%;
+            min-height: 85vh;
+        }
+
+        .login-form-header h2 {
+            font-family: 'Lora', Georgia, serif;
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #f8f9fc;
+            margin: 0 0 0.4rem 0;
+        }
+
+        .login-form-header p {
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.88rem;
+            color: #7b92b2;
+            margin: 0 0 1.8rem 0;
+        }
+
+        .login-field-label {
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #b0c1d8;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin-bottom: 0.4rem;
+        }
+
+        .login-error {
+            text-align: center;
+            font-family: 'Source Sans 3', sans-serif;
+            color: #f87171;
+            font-size: 0.88rem;
+            margin-top: 0.6rem;
+            padding: 0.6rem 1rem;
+            background: rgba(248, 113, 113, 0.06);
+            border: 1px solid rgba(248, 113, 113, 0.15);
+            border-radius: 10px;
+        }
+
+        .login-footer-text {
+            text-align: center;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #1e293b;
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 0.75rem;
+            color: #4a6085;
+            letter-spacing: 0.04em;
+        }
+
+        /* Style login input */
+        .login-form-card .stTextInput input {
+            background: #111827 !important;
+            border: 1px solid #243352 !important;
+            border-radius: 10px !important;
+            color: #f8f9fc !important;
+            font-family: 'Source Sans 3', sans-serif !important;
+            font-size: 0.95rem !important;
+            padding: 0.75rem 1rem !important;
+        }
+
+        .login-form-card .stTextInput input:focus {
+            border-color: #c9952d !important;
+            box-shadow: 0 0 0 2px rgba(201, 149, 45, 0.15) !important;
+        }
+
+        .login-form-card .stTextInput input::placeholder {
+            color: #4a6085 !important;
+        }
     </style>
     """, unsafe_allow_html=True)
 
-    # Centered login card
-    _, col, _ = st.columns([1.5, 2, 1.5])
-    with col:
+    # Split layout using Streamlit columns
+    brand_col, spacer, form_col = st.columns([1.3, 0.15, 0.8])
+
+    with brand_col:
         st.markdown('''
-        <div style="
-            text-align: center;
-            padding: 3rem 0 1.5rem 0;
-        ">
-            <div style="
-                font-family: 'Lora', Georgia, serif;
-                font-size: 2.2rem;
-                font-weight: 700;
-                color: #f8f9fc;
-                letter-spacing: 0.02em;
-            ">Maure's <span style="
-                background: linear-gradient(135deg, #c9952d 0%, #dfbc5e 50%, #c9952d 100%);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-            ">Strategie Club</span></div>
-            <div style="
-                font-family: 'Source Sans 3', sans-serif;
-                font-size: 0.9rem;
-                color: #4a6085;
-                margin-top: 0.5rem;
-                letter-spacing: 0.04em;
-                text-transform: uppercase;
-            ">Zugang nur für autorisierte Nutzer</div>
+        <div class="login-brand">
+            <div class="brand-content">
+                <div class="brand-ornament">
+                    <div class="line"></div>
+                    <div class="diamond"></div>
+                    <div class="line"></div>
+                </div>
+                <div class="brand-title">
+                    Maure's<br><span class="accent">Strategie Club</span>
+                </div>
+                <div class="brand-subtitle">
+                    Multi-KI-Strategie-Plattform:<br>
+                    Drei KI-Systeme debattieren, analysieren und
+                    optimieren Ihre Strategiedokumente.
+                </div>
+                <div class="brand-features">
+                    <div class="brand-feature">
+                        <div class="brand-feature-icon claude">C</div>
+                        <span><strong style="color:#93c5fd;">Claude</strong> &mdash; Kritischer Strategie-Reviewer</span>
+                    </div>
+                    <div class="brand-feature">
+                        <div class="brand-feature-icon perplexity">P</div>
+                        <span><strong style="color:#5eead4;">Perplexity</strong> &mdash; Research & Faktencheck</span>
+                    </div>
+                    <div class="brand-feature">
+                        <div class="brand-feature-icon chatgpt">G</div>
+                        <span><strong style="color:#86efac;">ChatGPT</strong> &mdash; Synthese & Rhetorik</span>
+                    </div>
+                </div>
+            </div>
+            <div class="brand-copyright">
+                &copy; 2024 IT Warehouse AG &middot; Maure's Strategie Club
+            </div>
         </div>
         ''', unsafe_allow_html=True)
 
+    with form_col:
+        st.markdown('<div class="login-form-card">', unsafe_allow_html=True)
+
         st.markdown('''
-        <div style="
-            background: #111827;
-            border: 1px solid #1e293b;
-            border-radius: 16px;
-            padding: 2rem;
-            margin-top: 1rem;
-        ">
+        <div class="login-form-header">
+            <h2>Willkommen</h2>
+            <p>Bitte authentifizieren Sie sich mit Ihrem Passkey.</p>
+        </div>
+        <div class="login-field-label">Passkey</div>
         ''', unsafe_allow_html=True)
 
         passkey = st.text_input(
@@ -104,34 +352,24 @@ def _show_login():
 
         login_clicked = st.button("Anmelden", type="primary", use_container_width=True)
 
-        st.markdown('</div>', unsafe_allow_html=True)
-
         if login_clicked:
             if hashlib.sha256(passkey.encode()).hexdigest() == PASSKEY_HASH:
                 st.session_state["authenticated"] = True
                 st.rerun()
             else:
-                st.markdown('''
-                <div style="
-                    text-align: center;
-                    font-family: 'Source Sans 3', sans-serif;
-                    color: #f87171;
-                    font-size: 0.9rem;
-                    margin-top: 1rem;
-                ">Falscher Passkey. Bitte erneut versuchen.</div>
-                ''', unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="login-error">Falscher Passkey. Bitte erneut versuchen.</div>',
+                    unsafe_allow_html=True,
+                )
 
         st.markdown('''
-        <div style="
-            text-align: center;
-            margin-top: 2rem;
-            font-family: 'Source Sans 3', sans-serif;
-            font-size: 0.72rem;
-            color: #2e4066;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-        ">Multi-AI Strategy Debate Platform</div>
+        <div class="login-footer-text">
+            Multi-AI Strategy Debate Platform<br>
+            Powered by Claude &middot; Perplexity &middot; ChatGPT
+        </div>
         ''', unsafe_allow_html=True)
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
 
 if not _check_auth():
